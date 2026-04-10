@@ -1,0 +1,103 @@
+name: phoenix-dev
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: phoenix-dev-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-phoenix}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    ports:
+      - "${POSTGRES_HOST_PORT:-5433}:5432"
+    volumes:
+      - phoenix_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-phoenix}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.pydev
+      extra_hosts:
+        - "host.docker.internal:host-gateway"
+      args:
+        HTTP_PROXY: ${HTTP_PROXY:-}
+        HTTPS_PROXY: ${HTTPS_PROXY:-}
+        ALL_PROXY: ${ALL_PROXY:-}
+        NO_PROXY: ${NO_PROXY:-}
+    container_name: phoenix-dev-backend
+    restart: unless-stopped
+    working_dir: /workspace
+    command: >
+      bash -lc "/opt/venv/bin/python -m uvicorn app.main:app
+      --reload
+      --app-dir apps/backend
+      --host 0.0.0.0
+      --port 8000"
+    environment:
+      ENVIRONMENT: development
+      DEBUG: "true"
+      ALL_PROXY: ""
+      all_proxy: ""
+      HTTP_PROXY: ""
+      http_proxy: ""
+      HTTPS_PROXY: ""
+      https_proxy: ""
+      NO_PROXY: localhost,127.0.0.1,postgres
+      no_proxy: localhost,127.0.0.1,postgres
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+      PROJECT_NAME: Phoenix
+      API_PREFIX: /api/v1
+      FRONTEND_URL: http://localhost:5173
+      ALLOWED_ORIGINS: http://localhost:5173,http://127.0.0.1:5173,http://localhost
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-phoenix}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_POOL_SIZE: "5"
+      POSTGRES_POOL_MAX_OVERFLOW: "10"
+      POSTGRES_POOL_TIMEOUT: "30"
+      POSTGRES_POOL_RECYCLE: "1800"
+    ports:
+      - "8000:8000"
+    gpus: all
+    volumes:
+      - ./:/workspace
+      - phoenix_uv_cache:/root/.cache/uv
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    image: node:20-bookworm
+    container_name: phoenix-dev-frontend
+    restart: unless-stopped
+    working_dir: /workspace/apps/frontend
+    command: >
+      bash -lc "corepack enable
+      && pnpm install --frozen-lockfile
+      && pnpm dev --host 0.0.0.0 --port 5173"
+    environment:
+      VITE_API_BASE_URL: http://127.0.0.1:8000
+      CHOKIDAR_USEPOLLING: "true"
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./:/workspace
+      - phoenix_pnpm_store:/root/.local/share/pnpm/store
+      - phoenix_frontend_node_modules:/workspace/apps/frontend/node_modules
+    depends_on:
+      - backend
+
+volumes:
+  phoenix_postgres_data:
+  phoenix_uv_cache:
+  phoenix_pnpm_store:
+  phoenix_frontend_node_modules:

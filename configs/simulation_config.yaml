@@ -1,0 +1,86 @@
+dataset:
+  name: CIFAR-10
+  data_dir: ./datasets
+  distribution: non_iid
+  alpha: 0.5
+  num_clients: 3
+model:
+  name: CNN
+  input_shape:
+  - 32
+  - 32
+  - 3
+  num_classes: 10
+federated:
+  num_rounds: 10
+  clients_per_round: 2
+  local_epochs: 5
+  learning_rate: 0.01
+  aggregation: fedavg
+  num_clients: 3
+attack:
+  enable: true
+  malicious_clients:
+  - 0
+  - 1
+  - 2
+  attack_category: data
+  attack_type: label_flipping
+  attack_params:
+    flip_ratio: 1
+    noise_scale: 0.5
+    scale_factor: 10
+    attack_strength: 5
+  client_settings:
+    0:
+      attack_category: data
+      attack_type: label_flipping
+      attack_params:
+        flip_ratio: 1
+        noise_scale: 0.5
+        scale_factor: 10
+        attack_strength: 5
+    1:
+      attack_category: data
+      attack_type: label_flipping
+      attack_params:
+        flip_ratio: 1
+        noise_scale: 0.5
+        scale_factor: 10
+        attack_strength: 5
+    2:
+      attack_category: data
+      attack_type: label_flipping
+      attack_params:
+        flip_ratio: 1
+        noise_scale: 0.5
+        scale_factor: 10
+        attack_strength: 5
+defense:
+  enable: true
+  strategy: median
+  defense_params:
+    num_malicious: 3
+    multi_krum: false
+    coordinate_wise: true
+    trimmed_mean: false
+    trim_ratio: 0.1
+compression:
+  sparsification:
+    enable: false
+    ratio: 0.5
+privacy:
+  homomorphic_encryption:
+    enable: false
+    poly_modulus_degree: 8192
+system:
+  mode: simulation
+  node_role: server
+distributed:
+  server_ip: 127.0.0.1
+  port: 50052
+  client_id: 0
+logging:
+  log_dir: ./logs
+  save_results: true
+  results_dir: ./results

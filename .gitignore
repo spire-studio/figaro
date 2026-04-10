@@ -1,0 +1,34 @@
+# Datasets
+datasets/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+*.egg-info/
+
+# Node
+node_modules/
+dist/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+
+# Results & logs (user-generated)
+results/
+logs/
+
+# Configs (auto-generated per run)
+configs/simulation_runs/
+configs/agent_experiment_runs/
+configs/agent_config_*.yaml
+configs/cached/

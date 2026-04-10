@@ -1,0 +1,230 @@
+dataset:
+  role: "server"
+  name:
+    type: "select"
+    options: ["CIFAR-10", "CIFAR-100", "MNIST", "Fashion-MNIST"]
+    default: "CIFAR-10"
+  data_dir:
+    type: "text"
+    default: "./datasets"
+  distribution:
+    type: "select"
+    options: ["iid", "non_iid"]
+    default: "non_iid"
+  alpha:
+    type: "number"
+    min: 0.1
+    max: 10.0
+    step: 0.1
+    default: 0.5
+    description: "Dirichlet分布参数"
+    depends_on: "dataset.distribution == non_iid"
+  num_clients:
+    type: "number"
+    min: 1
+    max: 100
+    default: 2
+    hidden: true
+
+model:
+  role: "server"
+  name:
+    type: "select"
+    options: ["CNN", "LeNet", "ResNet"]
+    default: "CNN"
+  input_shape:
+    type: "list_int"
+    default: [32, 32, 3]
+  num_classes:
+    type: "number"
+    default: 10
+
+federated:
+  role: "server"
+  num_clients:
+    type: "number"
+    min: 1
+    max: 100
+    default: 3
+    hidden: true
+  num_rounds:
+    type: "number"
+    default: 10
+  clients_per_round:
+    type: "number"
+    default: 2
+  local_epochs:
+    type: "number"
+    default: 5
+  learning_rate:
+    type: "number"
+    step: 0.001
+    default: 0.01
+  aggregation:
+    type: "select"
+    options: ["fedavg", "fedprox", "scaffold"]
+    default: "fedavg"
+
+attack:
+  role: "client"
+  enable:
+    type: "bool"
+    default: false
+  attacker_selector:
+    depends_on: "attack.enable == true"
+    mode:
+      type: "select"
+      options: ["explicit_ids", "count", "ratio"]
+      default: "explicit_ids"
+    selection_policy:
+      type: "select"
+      options: ["lowest_ids"]
+      default: "lowest_ids"
+    count:
+      type: "number"
+      default: 1
+      depends_on: "attack.attacker_selector.mode == count"
+    ratio:
+      type: "number"
+      default: 0.2
+      min: 0
+      max: 1.0
+      depends_on: "attack.attacker_selector.mode == ratio"
+  malicious_clients:
+    type: "list_int"
+    default: []
+    description: "攻击者客户端ID列表 (逗号分隔)"
+    depends_on: "attack.attacker_selector.mode == explicit_ids"
+    hidden: true
+  attack_category:
+    type: "select"
+    options: ["data", "model"]
+    default: "data"
+    depends_on: "attack.enable == true"
+  attack_type:
+    type: "select"
+    options: ["label_flipping", "gaussian", "scaling", "ipm"]
+    default: "label_flipping"
+    depends_on: "attack.enable == true"
+  attack_params:
+    depends_on: "attack.enable == true"
+    flip_ratio:
+      type: "number"
+      default: 1.0
+      min: 0
+      max: 1.0
+      depends_on: "attack.attack_type == label_flipping"
+    noise_scale:
+      type: "number"
+      default: 0.5
+      depends_on: "attack.attack_type == gaussian"
+    scale_factor:
+      type: "number"
+      default: 10
+      depends_on: "attack.attack_type == scaling"
+    attack_strength:
+      type: "number"
+      default: 5
+      depends_on: "attack.attack_type == ipm"
+
+defense:
+  role: "server"
+  enable:
+    type: "bool"
+    default: false
+  strategy:
+    type: "select"
+    options: ["fedavg", "krum", "multi_krum", "median", "coordinate_median", "trimmed_mean"]
+    default: "median"
+    depends_on: "defense.enable == true"
+  defense_params:
+    depends_on: "defense.enable == true"
+    num_malicious:
+      type: "number"
+      default: 1
+      description: "预期恶意客户端数量 (Krum相关)"
+      depends_on: "defense.strategy == krum"
+      hidden: true
+    multi_krum:
+      type: "bool"
+      default: false
+      depends_on: "defense.strategy == krum"
+    coordinate_wise:
+      type: "bool"
+      default: true
+      description: "是否按坐标计算中位数"
+      depends_on: "defense.strategy == median"
+    trimmed_mean:
+      type: "bool"
+      default: false
+      depends_on: "defense.strategy == median"
+    trim_ratio:
+      type: "number"
+      default: 0.1
+      min: 0
+      max: 0.5
+      depends_on: "defense.defense_params.trimmed_mean == true"
+
+compression:
+  role: "server"
+  sparsification:
+    enable:
+      type: "bool"
+      default: false
+    ratio:
+      type: "number"
+      default: 0.5
+      min: 0
+      max: 1.0
+      depends_on: "compression.sparsification.enable == true"
+
+privacy:
+  role: "server"
+  homomorphic_encryption:
+    enable:
+      type: "bool"
+      default: false
+    poly_modulus_degree:
+      type: "select"
+      options: [4096, 8192, 16384]
+      default: 8192
+      depends_on: "privacy.homomorphic_encryption.enable == true"
+
+system:
+  hidden: true
+  role: "server"
+  mode:
+    type: "select"
+    options: ["simulation", "distributed"]
+    default: "distributed"
+  node_role:
+    type: "select"
+    options: ["server", "client"]
+    default: "server"
+
+distributed:
+  role: "server"
+  server_ip:
+    type: "text"
+    default: "127.0.0.1"
+    depends_on: "system.mode == distributed"
+  port:
+    type: "number"
+    default: 50052
+    depends_on: "system.mode == distributed"
+  client_id:
+    type: "number"
+    default: 0
+    depends_on: "system.mode == distributed && system.node_role == client"
+
+logging:
+  role: "server"
+  log_dir:
+    type: "text"
+    default: "./logs"
+  save_results:
+    type: "bool"
+    default: true
+  results_dir:
+    type: "text"
+    default: "./results"
