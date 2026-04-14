@@ -9,7 +9,6 @@
     <img src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white" alt="React">
     <img src="https://img.shields.io/badge/PyTorch-2.5-EE4C2C?logo=pytorch&logoColor=white" alt="PyTorch">
     <img src="https://img.shields.io/badge/LangGraph-agent-1C3C3C?logo=langchain&logoColor=white" alt="LangGraph">
-    <a href="https://github.com/spire-studio/figaro/stargazers"><img src="https://img.shields.io/github/stars/spire-studio/figaro?style=social" alt="Stars"></a>
   </p>
   <p>
     <strong>English</strong> | <a href="./README.zh-CN.md">简体中文</a>
