@@ -7,15 +7,15 @@ def _base_settings_kwargs() -> dict:
     return {
         "ENVIRONMENT": "local",
         "DEBUG": True,
-        "PROJECT_NAME": "Phoenix",
+        "PROJECT_NAME": "Figaro",
         "API_PREFIX": "/api/v1",
         "FRONTEND_URL": "http://localhost:5173",
         "ALLOWED_ORIGINS": "http://localhost:5173, http://127.0.0.1:5173",
         "POSTGRES_HOST": "localhost",
         "POSTGRES_PORT": 5432,
-        "POSTGRES_DB": "phoenix",
-        "POSTGRES_USER": "phoenix",
-        "POSTGRES_PASSWORD": "phoenix",
+        "POSTGRES_DB": "figaro",
+        "POSTGRES_USER": "figaro",
+        "POSTGRES_PASSWORD": "figaro",
         "POSTGRES_POOL_SIZE": 5,
         "POSTGRES_POOL_MAX_OVERFLOW": 10,
         "POSTGRES_POOL_TIMEOUT": 30,
@@ -73,12 +73,12 @@ def test_settings_field_naming_and_alias_mapping():
     settings = Settings(**_base_settings_kwargs())
     assert settings.environment == "local"
     assert settings.debug is True
-    assert settings.project_name == "Phoenix"
+    assert settings.project_name == "Figaro"
     assert settings.api_prefix == "/api/v1"
     assert settings.frontend_url == "http://localhost:5173"
     assert settings.postgres_host == "localhost"
     assert settings.postgres_port == 5432
-    assert settings.postgres_db == "phoenix"
+    assert settings.postgres_db == "figaro"
     assert settings.openai_api_key == "test-key"
     assert settings.openai_api_base == "https://api.openai.com/v1"
     assert settings.default_llm_model == "gpt-4o-mini"
@@ -91,7 +91,7 @@ def test_settings_build_database_urls():
     alembic_url = str(settings.alembic_database_url)
     sqlalchemy_url = str(settings.sqlalchemy_database_url)
 
-    assert alembic_url.startswith("postgresql+psycopg://phoenix:phoenix@localhost:5432/")
-    assert sqlalchemy_url.startswith("postgresql+asyncpg://phoenix:phoenix@localhost:5432/")
-    assert alembic_url.endswith("/phoenix")
-    assert sqlalchemy_url.endswith("/phoenix")
+    assert alembic_url.startswith("postgresql+psycopg://figaro:figaro@localhost:5432/")
+    assert sqlalchemy_url.startswith("postgresql+asyncpg://figaro:figaro@localhost:5432/")
+    assert alembic_url.endswith("/figaro")
+    assert sqlalchemy_url.endswith("/figaro")

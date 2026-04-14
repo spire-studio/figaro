@@ -113,8 +113,6 @@ class SimulationRunMetricsService:
             "experiment_info": {
                 "basic": {},
                 "federated": {},
-                "attack": {},
-                "defense": {},
                 "security": {},
             },
             "global_results": {
@@ -220,7 +218,7 @@ class SimulationRunMetricsService:
 
         experiment_info = payload.get("experiment_info")
         if isinstance(experiment_info, dict):
-            for section in ("basic", "federated", "attack", "defense", "security"):
+            for section in ("basic", "federated", "security"):
                 section_payload = experiment_info.get(section)
                 if isinstance(section_payload, dict):
                     normalized["experiment_info"][section] = section_payload

@@ -1,4 +1,4 @@
-# Phoenix Frontend (React + OpenAPI)
+# Figaro Frontend (React + OpenAPI)
 
 ## Setup
 

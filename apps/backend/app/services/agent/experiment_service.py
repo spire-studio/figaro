@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import math
 import os
 import re
 import sys
@@ -50,8 +49,8 @@ LOG_LEVEL_INLINE_PATTERN = re.compile(
 )
 RUN_CONFIG_ARTIFACT = "run_config"
 TRAINING_RESULT_ARTIFACT = "training_result"
-RESULT_FILE_ENV_KEY = "PHOENIX_RESULTS_FILE"
-DISABLE_FILE_LOG_ENV_KEY = "PHOENIX_DISABLE_FILE_LOG"
+RESULT_FILE_ENV_KEY = "FIGARO_RESULTS_FILE"
+DISABLE_FILE_LOG_ENV_KEY = "FIGARO_DISABLE_FILE_LOG"
 TERMINAL_RUN_STATUSES = {
     AgentExperimentRunStatus.SUCCEEDED,
     AgentExperimentRunStatus.FAILED,
@@ -232,18 +231,6 @@ class AgentExperimentService:
         system["mode"] = "simulation"
         system["node_role"] = "server"
 
-        attack = merged.get("attack")
-        malicious_count = 0
-        if isinstance(attack, dict):
-            malicious_clients = cls._normalize_attack_settings(merged, attack)
-            malicious_count = len(malicious_clients)
-
-        defense = merged.get("defense")
-        if isinstance(defense, dict):
-            defense_params = defense.get("defense_params")
-            if isinstance(defense_params, dict):
-                defense_params["num_malicious"] = malicious_count
-
         cls._validate_config_node(merged, schema, path_prefix="")
         return merged
 
@@ -274,8 +261,6 @@ class AgentExperimentService:
         }
         for key in config_node:
             if key not in allowed_keys:
-                if path_prefix == "attack" and key == "client_settings" and isinstance(config_node[key], dict):
-                    continue
                 full_path = f"{path_prefix}.{key}" if path_prefix else key
                 raise exceptions.BadRequestError(f"Unknown config field: {full_path}")
 
@@ -383,114 +368,6 @@ class AgentExperimentService:
             return ""
         return ""
 
-    @classmethod
-    def _normalize_attack_settings(cls, merged_config: dict[str, Any], attack: dict[str, Any]) -> list[int]:
-        attacker_selector = attack.get("attacker_selector")
-        if not isinstance(attacker_selector, dict):
-            attacker_selector = {}
-            attack["attacker_selector"] = attacker_selector
-
-        malicious_clients = attack.get("malicious_clients")
-        if not isinstance(malicious_clients, list):
-            malicious_clients = []
-        malicious_clients = cls._normalize_malicious_client_ids(malicious_clients)
-
-        default_mode = "explicit_ids"
-        if malicious_clients:
-            default_mode = "explicit_ids"
-        elif cls._as_positive_int(attacker_selector.get("count")) is not None:
-            default_mode = "count"
-        elif cls._as_positive_ratio(attacker_selector.get("ratio")) is not None:
-            default_mode = "ratio"
-
-        mode = attacker_selector.get("mode")
-        if not isinstance(mode, str) or not mode.strip():
-            mode = default_mode
-        attacker_selector["mode"] = mode
-
-        selection_policy = attacker_selector.get("selection_policy")
-        if not isinstance(selection_policy, str) or not selection_policy.strip():
-            selection_policy = "lowest_ids"
-        attacker_selector["selection_policy"] = selection_policy
-
-        enabled = bool(attack.get("enable"))
-        if not enabled:
-            attack["enable"] = False
-            attack["malicious_clients"] = []
-            return []
-
-        num_clients = cls._resolve_num_clients(merged_config)
-        derived_clients = cls._resolve_malicious_clients(
-            num_clients=num_clients,
-            mode=mode,
-            malicious_clients=malicious_clients,
-            attacker_selector=attacker_selector,
-        )
-        attack["enable"] = True
-        attack["malicious_clients"] = derived_clients
-        return derived_clients
-
-    @classmethod
-    def _resolve_num_clients(cls, merged_config: dict[str, Any]) -> int:
-        federated = merged_config.get("federated")
-        if isinstance(federated, dict):
-            value = federated.get("num_clients")
-            if isinstance(value, int) and value > 0:
-                return value
-            if isinstance(value, float) and float(value).is_integer() and value > 0:
-                return int(value)
-        raise exceptions.BadRequestError("federated.num_clients must be a positive integer when attack is enabled")
-
-    @classmethod
-    def _resolve_malicious_clients(cls, *, num_clients: int, mode: str, malicious_clients: list[int], attacker_selector: dict[str, Any]) -> list[int]:
-        if mode == "explicit_ids":
-            if not malicious_clients:
-                raise exceptions.BadRequestError(
-                    "attack.malicious_clients must contain at least one client when attacker_selector.mode is explicit_ids"
-                )
-            cls._validate_client_ids_within_range(malicious_clients, num_clients)
-            return malicious_clients
-        if mode == "count":
-            count = cls._as_positive_int(attacker_selector.get("count"))
-            if count is None:
-                raise exceptions.BadRequestError(
-                    "attack.attacker_selector.count must be a positive integer when attacker_selector.mode is count"
-                )
-            if count > num_clients:
-                raise exceptions.BadRequestError("attack.attacker_selector.count cannot exceed federated.num_clients")
-            return cls._select_lowest_client_ids(count)
-        if mode == "ratio":
-            ratio = cls._as_positive_ratio(attacker_selector.get("ratio"))
-            if ratio is None:
-                raise exceptions.BadRequestError(
-                    "attack.attacker_selector.ratio must be in (0, 1] when attacker_selector.mode is ratio"
-                )
-            count = max(1, math.ceil(num_clients * ratio))
-            count = min(count, num_clients)
-            return cls._select_lowest_client_ids(count)
-        raise exceptions.BadRequestError(f"Unsupported attack.attacker_selector.mode: {mode}")
-
-    @staticmethod
-    def _normalize_malicious_client_ids(values: list[Any]) -> list[int]:
-        normalized: list[int] = []
-        for item in values:
-            if isinstance(item, bool) or not isinstance(item, int) or item < 0:
-                raise exceptions.BadRequestError("attack.malicious_clients must be a list of non-negative integers")
-            normalized.append(item)
-        return sorted(set(normalized))
-
-    @staticmethod
-    def _validate_client_ids_within_range(client_ids: list[int], num_clients: int) -> None:
-        for client_id in client_ids:
-            if client_id >= num_clients:
-                raise exceptions.BadRequestError(
-                    "attack.malicious_clients contains a client id outside federated.num_clients"
-                )
-
-    @staticmethod
-    def _select_lowest_client_ids(count: int) -> list[int]:
-        return list(range(count))
-
     @staticmethod
     def _as_positive_int(value: Any) -> int | None:
         if isinstance(value, bool):
@@ -500,16 +377,6 @@ class AgentExperimentService:
         if isinstance(value, float) and float(value).is_integer() and value > 0:
             return int(value)
         return None
-
-    @staticmethod
-    def _as_positive_ratio(value: Any) -> float | None:
-        if isinstance(value, bool) or not isinstance(value, (int, float)):
-            return None
-        ratio = float(value)
-        if 0 < ratio <= 1:
-            return ratio
-        return None
-
 
 # ===================================================================
 # AgentExperimentRunService  (mirrors SimulationRunService)
@@ -855,8 +722,6 @@ class AgentExperimentRunService:
             "experiment_info": {
                 "basic": {},
                 "federated": {},
-                "attack": {},
-                "defense": {},
                 "security": {},
             },
             "global_results": {
@@ -914,7 +779,7 @@ class AgentExperimentRunService:
 
         experiment_info = payload.get("experiment_info")
         if isinstance(experiment_info, dict):
-            for section in ("basic", "federated", "attack", "defense", "security"):
+            for section in ("basic", "federated", "security"):
                 section_payload = experiment_info.get(section)
                 if isinstance(section_payload, dict):
                     normalized["experiment_info"][section] = section_payload
@@ -984,12 +849,18 @@ class AgentExperimentRunService:
         inline_match = LOG_LEVEL_INLINE_PATTERN.search(message)
         if inline_match and " - " in message:
             return cls._normalize_log_level(inline_match.group(1))
-        return cls._normalize_log_level(stream_level)
+        # Ignore stream_level — many Python tools write plain INFO output to
+        # stderr. Only promote to ERROR when the content actually looks like one.
+        lowered = message.lower()
+        if "traceback" in lowered or "exception" in lowered or "error:" in lowered:
+            return "ERROR"
+        return "INFO"
 
     @staticmethod
     def _build_train_command(config_path: Path) -> list[str]:
         return [
             sys.executable,
+            "-u",
             "apps/backend/runners/experiment_runner.py",
             "--mode",
             "simulation",

@@ -31,12 +31,6 @@ class ConfigManager:
     def get_federated_config(self) -> Dict[str, Any]:
         return self.config.get('federated', {})
     
-    def get_attack_config(self) -> Dict[str, Any]:
-        return self.config.get('attack', {})
-    
-    def get_defense_config(self) -> Dict[str, Any]:
-        return self.config.get('defense', {})
-    
     def get_logging_config(self) -> Dict[str, Any]:
         return self.config.get('logging', {})
     

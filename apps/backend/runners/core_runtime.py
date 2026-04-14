@@ -28,10 +28,6 @@ from fl_core.federated.client_manager import ClientManager
 from fl_core.compression.sparsification import GlobalTopKSparsifier
 from fl_core.privacy.encryption import CKKSManager
 from fl_core.federated.communication import GRPCServer, GRPCWorker, GRPCClientProxy
-try:
-    from fl_core.attacks.data_poison import DataAttackManager
-except ImportError:
-    DataAttackManager = None
 WebApp = None
 
 
@@ -54,15 +50,20 @@ class FederatedLearningFramework:
         
     def initialize_system(self) -> bool:
         try:
-            print("联邦学习投毒攻击防御训练框架")
-            print("Federated Learning Poisoning Attack Defense Training Framework")
+            print("联邦学习训练框架")
+            print("Federated Learning Training Framework")
             print("=" * 60)
             
             print("正在加载配置文件...")
             self.config_manager = ConfigManager(self.config_path)
             self.config_manager.validate_config()
             print("✓ 配置文件加载成功")
-            
+
+            fed_cfg_early = self.config_manager.get_federated_config()
+            seed = int(fed_cfg_early.get('seed', 42))
+            self._apply_seed(seed)
+            print(f"✓ 随机种子已固定: seed={seed}")
+
             system_cfg = self.config_manager.config.get('system', {})
             dist_cfg = self.config_manager.config.get('distributed', {})
             mode = system_cfg.get('mode', 'simulation')
@@ -125,44 +126,30 @@ class FederatedLearningFramework:
             traceback.print_exc()
             return False
     
+    @staticmethod
+    def _apply_seed(seed: int) -> None:
+        """Fix all RNG sources so runs with the same config reproduce exactly."""
+        import os
+        import random
+        import numpy as np
+        import torch
+
+        os.environ["PYTHONHASHSEED"] = str(seed)
+        random.seed(seed)
+        np.random.seed(seed)
+        torch.manual_seed(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(seed)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+
     def _get_experiment_info(self) -> Dict[str, Any]:
         dataset_cfg = self.config_manager.get_dataset_config()
         model_cfg = self.config_manager.get_model_config()
         fed_cfg = self.config_manager.get_federated_config()
-        attack_cfg = self.config_manager.get_attack_config()
-        defense_cfg = self.config_manager.get_defense_config()
         compression_cfg = self.config_manager.get_compression_config()
         privacy_cfg = self.config_manager.get_privacy_config()
-        
-        attack_detail = {
-        "enabled": attack_cfg.get('enable', False),
-        "global_type": attack_cfg.get('attack_type', 'none'),
-        "malicious_clients": attack_cfg.get('malicious_clients', []),
-        "per_client_settings": {}  # 存储具体的攻击节点差异
-        }
 
-        if attack_detail["enabled"]:
-            client_settings = attack_cfg.get('client_settings', {})
-            global_params = attack_cfg.get('attack_params', {})
-            
-            for cid in attack_detail["malicious_clients"]:
-                # 兼容处理 JSON 中数字 key 被转为字符串的情况
-                cid_str = str(cid)
-                specific_cfg = client_settings.get(cid) or client_settings.get(cid_str)
-                
-                if specific_cfg:
-                    # 如果该节点有特定配置
-                    attack_detail["per_client_settings"][cid] = {
-                        "type": specific_cfg.get('attack_type', attack_detail["global_type"]),
-                        "params": specific_cfg.get('attack_params', global_params)
-                    }
-                else:
-                    # 否则回退到全局默认攻击配置
-                    attack_detail["per_client_settings"][cid] = {
-                        "type": attack_detail["global_type"],
-                        "params": global_params
-                    }
-        
         return {
             "basic": {
                 "dataset_name": dataset_cfg.get('name', 'Unknown'),
@@ -178,12 +165,6 @@ class FederatedLearningFramework:
                 "local_epochs": fed_cfg.get('local_epochs', 1),
                 "learning_rate": fed_cfg.get('learning_rate', 0.01),
                 "aggregation": fed_cfg.get('aggregation', 'fedavg')
-            },
-            "attack": attack_detail,
-            "defense": {
-                "enabled": defense_cfg.get('enable', False),
-                "strategy": defense_cfg.get('strategy', 'none'),
-                "params": defense_cfg.get('defense_params', {})
             },
             "security": {
                 "encryption": {
@@ -202,53 +183,23 @@ class FederatedLearningFramework:
     def _log_experiment_config(self, experiment_info: Dict[str, Any]) -> None:
         basic = experiment_info.get('basic', {})
         fed = experiment_info.get('federated', {})
-        attack = experiment_info.get('attack', {})
-        defense = experiment_info.get('defense', {})
 
         self.logger.log_info("=" * 50)
         self.logger.log_info("实验配置信息")
         self.logger.log_info("=" * 50)
-        
-        # 1. 基础配置
+
         self.logger.log_info(f"数据集: {basic.get('dataset_name')}")
         self.logger.log_info(f"数据分布: {basic.get('distribution')} (Alpha: {basic.get('alpha')})")
         self.logger.log_info(f"模型: {basic.get('model_name')}")
-        
-        # 2. 联邦学习配置
+
         self.logger.log_info(f"客户端总数: {fed.get('num_clients')}")
         self.logger.log_info(f"训练轮次: {fed.get('num_rounds')}")
         self.logger.log_info(f"每轮参与客户端: {fed.get('clients_per_round')}")
         self.logger.log_info(f"本地训练轮数: {fed.get('local_epochs')}")
         self.logger.log_info(f"学习率: {fed.get('learning_rate')}")
         self.logger.log_info(f"聚合方法: {fed.get('aggregation')}")
-        
-        # 3. 攻击配置
-        if attack.get('enabled'):
-            self.logger.log_info(f"攻击类型: {attack.get('global_type')}")
-            self.logger.log_info(f"恶意客户端: {attack.get('malicious_clients')}")
-        else:
-            self.logger.log_info("攻击: 未启用")
-        
-        # 4. 防御配置
-        if defense.get('enabled'):
-            self.logger.log_info(f"防御策略: {defense.get('strategy')}")
-        else:
-            self.logger.log_info("防御: 未启用")
-        
+
         self.logger.log_info("=" * 50)
-        
-        print(f"\n实验配置:")
-        print(f"  数据集: {basic.get('dataset_name')} ({basic.get('distribution')})")
-        print(f"  模型: {basic.get('model_name')}")
-        print(f"  客户端: {fed.get('num_clients')} (每轮 {fed.get('clients_per_round')})")
-        print(f"  训练轮次: {fed.get('num_rounds')} 轮 x {fed.get('local_epochs')} 本地轮数")
-        print(f"  聚合方法: {fed.get('aggregation')}")
-        
-        if attack.get('enabled'):
-            print(f"  攻击: {attack.get('global_type')} (客户端 {attack.get('malicious_clients')})")
-        
-        if defense.get('enabled'):
-            print(f"  防御: {defense.get('strategy')}")
 
     def run_distributed_server(self):
         distributed_config = self.config_manager.get_distributed_config()
@@ -279,14 +230,12 @@ class FederatedLearningFramework:
 
         # 2. 设置模型和聚合服务器
         self.setup_models()
-        defense_config = self.config_manager.get_defense_config()
         federated_config = self.config_manager.get_federated_config()
-        
+
         self.server = FederatedServer(
             global_model=self.global_model,
-            aggregation_method=defense_config.get('strategy') if defense_config.get('enable') else federated_config.get('aggregation'),
+            aggregation_method=federated_config.get('aggregation', 'fedavg'),
             ckks_manager=self.ckks_manager,
-            config=defense_config
         )
 
         # 3. 启动 gRPC 通信服务
@@ -297,9 +246,7 @@ class FederatedLearningFramework:
 
         # 4. 初始化客户端管理器
         self.client_manager = ClientManager(
-            clients=[], 
-            attack_config=self.config_manager.get_attack_config(),
-            malicious_clients=self.config_manager.get_attack_config().get('malicious_clients', []),
+            clients=[],
             sparsifier=self.sparsifier,
             ckks_manager=self.ckks_manager
         )
@@ -340,7 +287,6 @@ class FederatedLearningFramework:
         client_id = distributed_config.get('client_id')
         server_ip = distributed_config.get('server_ip')
         port = distributed_config.get('port')
-        attack_config = self.config_manager.get_attack_config()
 
         self.logger.log_info(f"正在启动客户端 ID: {client_id}...")
         
@@ -364,17 +310,6 @@ class FederatedLearningFramework:
         train_labels = client_bundle.get('labels')
         test_data = client_bundle.get('test_x')
         test_labels = client_bundle.get('test_y')
-
-        # 3. 应用数据投毒攻击
-        is_malicious = (attack_config.get('enable', False) and 
-                    client_id in attack_config.get('malicious_clients', []))
-        if is_malicious and attack_config.get('attack_category') == 'data':
-            self.logger.log_info(f"⚠️ 客户端 {client_id} 检测为恶意节点，正在执行本地数据投毒...")
-            data_attacker = DataAttackManager(attack_config)
-            train_data, train_labels = data_attacker.apply_data_poison_attack(
-                client_id, train_data, train_labels
-        )
-        self.logger.log_info(f"✓ 客户端 {client_id} 数据投毒完成")
 
         self.logger.log_info(f"✓ 数据加载成功: client_{client_id}")
         self.logger.log_info(f"  - 训练样本数: {len(train_data)}")
@@ -497,7 +432,10 @@ class FederatedLearningFramework:
             self.global_model = global_model
             
             model_summary = self.model_manager.model_summary(global_model, dataset_info['input_shape'])
-            self.logger.log_info(f"模型创建完成:\n{model_summary}")
+            self.logger.log_info("模型创建完成:")
+            for line in model_summary.splitlines():
+                if line.strip():
+                    self.logger.log_info(line)
             
             print("✓ 模型设置完成")
             return True
@@ -512,26 +450,20 @@ class FederatedLearningFramework:
             print("正在设置联邦学习组件...")
             
             federated_config = self.config_manager.get_federated_config()
-            defense_config = self.config_manager.get_defense_config()
-            
+
             aggregation_method = federated_config.get('aggregation', 'fedavg')
-            if defense_config.get('enable', False):
-                aggregation_method = defense_config.get('strategy', 'fedavg')
-            
+
             self.server = FederatedServer(
                 global_model=self.global_model,
                 aggregation_method=aggregation_method,
                 ckks_manager=self.ckks_manager,
-                config=defense_config
             )
 
             clients = []
-            attack_config = self.config_manager.get_attack_config()
-            malicious_clients = attack_config.get('malicious_clients', []) if attack_config.get('enable', False) else []
-            
+
             for client_id, (train_data, train_labels, test_data, test_labels) in enumerate(self.client_data):
                 client_model = self.model_manager.clone_model(self.global_model)
-                
+
                 client = FederatedClient(
                     client_id=client_id,
                     train_data=train_data,
@@ -541,23 +473,20 @@ class FederatedLearningFramework:
                     model=client_model
                 )
 
-                if client_id in malicious_clients:
-                    client.is_malicious = True
-                
                 clients.append(client)
-            
+
             self.client_manager = ClientManager(
                 clients=clients,
-                attack_config = attack_config,
-                malicious_clients = malicious_clients,
                 sparsifier=self.sparsifier,
                 ckks_manager=self.ckks_manager,
                 selection_strategy="random"
             )
-            
+            # Parallel client training races the global torch RNG inside
+            # DataLoader shuffle, which defeats seeding. Force sequential
+            # so same seed → bit-exact reproducible runs.
+            self.client_manager.set_parallel_training(False)
+
             self.logger.log_info(f"联邦学习组件设置完成 - 服务器: {aggregation_method}, 客户端: {len(clients)}")
-            if malicious_clients:
-                self.logger.log_info(f"恶意客户端: {malicious_clients}")
             
             print("✓ 联邦学习组件设置完成")
             return True

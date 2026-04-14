@@ -38,7 +38,7 @@ def test_distributed_session_lifecycle(client):
     )
     c1 = client.post(
         f"/api/v1/distributed/sessions/{session_id}/connect",
-        json={"participant_name": "client-b", "metadata_json": {"device": "cpu", "is_malicious": True}},
+        json={"participant_name": "client-b", "metadata_json": {"device": "cpu"}},
     )
     assert c0.status_code == 201
     assert c1.status_code == 201
@@ -58,10 +58,6 @@ def test_distributed_session_lifecycle(client):
     assert approved0.json()["assigned_participant_id"] in {0, 1}
     assert approved1.json()["assigned_participant_id"] in {0, 1}
     assert approved0.json()["assigned_participant_id"] != approved1.json()["assigned_participant_id"]
-
-    approved_names = {approved0.json()["participant_name"]: approved0.json(), approved1.json()["participant_name"]: approved1.json()}
-    assert approved_names["client-b"]["is_malicious"] is True
-    assert approved_names["client-a"]["is_malicious"] is False
 
     ready0 = client.post(f"/api/v1/distributed/participants/{c0_id}/ready")
     ready1 = client.post(f"/api/v1/distributed/participants/{c1_id}/ready")

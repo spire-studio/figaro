@@ -21,8 +21,8 @@ from app.repositories.distributed import (
     DistributedSessionRepository,
 )
 
-RESULT_FILE_ENV_KEY = "PHOENIX_RESULTS_FILE"
-DISABLE_FILE_LOG_ENV_KEY = "PHOENIX_DISABLE_FILE_LOG"
+RESULT_FILE_ENV_KEY = "FIGARO_RESULTS_FILE"
+DISABLE_FILE_LOG_ENV_KEY = "FIGARO_DISABLE_FILE_LOG"
 
 
 class DistributedRuntimeService:
@@ -283,7 +283,7 @@ class DistributedRuntimeService:
         Get writable distributed runtime config directory.
         """
         preferred = self._project_root() / "configs" / "distributed_runs"
-        fallback = Path("/tmp") / "phoenix" / "configs" / "distributed_runs"
+        fallback = Path("/tmp") / "figaro" / "configs" / "distributed_runs"
         return self._resolve_writable_dir(preferred, fallback)
 
 
@@ -292,7 +292,7 @@ class DistributedRuntimeService:
         Get writable distributed runtime log directory.
         """
         preferred = self._project_root() / "logs" / "distributed_runs"
-        fallback = Path("/tmp") / "phoenix" / "logs" / "distributed_runs"
+        fallback = Path("/tmp") / "figaro" / "logs" / "distributed_runs"
         return self._resolve_writable_dir(preferred, fallback)
 
 
@@ -301,7 +301,7 @@ class DistributedRuntimeService:
         Get writable distributed result directory.
         """
         preferred = self._project_root() / "results"
-        fallback = Path("/tmp") / "phoenix" / "results"
+        fallback = Path("/tmp") / "figaro" / "results"
         return self._resolve_writable_dir(preferred, fallback)
 
 
@@ -428,8 +428,6 @@ class DistributedRuntimeService:
             "experiment_info": {
                 "basic": {},
                 "federated": {},
-                "attack": {},
-                "defense": {},
                 "security": {},
             },
             "global_results": {
@@ -448,6 +446,7 @@ class DistributedRuntimeService:
         """
         return [
             sys.executable,
+            "-u",
             "apps/backend/runners/experiment_runner.py",
             "--mode",
             "distributed",

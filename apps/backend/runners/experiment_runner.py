@@ -54,7 +54,7 @@ def _run_framework(config_path: Path) -> int:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Phoenix runtime entrypoint")
+    parser = argparse.ArgumentParser(description="Figaro runtime entrypoint")
     parser.add_argument("--config", type=Path, required=True, help="Path to runtime config file")
     parser.add_argument("--mode", choices=("simulation", "distributed"), required=True)
     parser.add_argument("--role", choices=("server", "client"), default=None)

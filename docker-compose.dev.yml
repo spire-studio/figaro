@@ -1,20 +1,20 @@
-name: phoenix-dev
+name: figaro-dev
 
 services:
   postgres:
     image: postgres:16
-    container_name: phoenix-dev-postgres
+    container_name: figaro-dev-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-phoenix}
+      POSTGRES_DB: ${POSTGRES_DB:-figaro}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
     ports:
       - "${POSTGRES_HOST_PORT:-5433}:5432"
     volumes:
-      - phoenix_postgres_data:/var/lib/postgresql/data
+      - figaro_postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-phoenix}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-figaro}"]
       interval: 5s
       timeout: 5s
       retries: 20
@@ -30,7 +30,7 @@ services:
         HTTPS_PROXY: ${HTTPS_PROXY:-}
         ALL_PROXY: ${ALL_PROXY:-}
         NO_PROXY: ${NO_PROXY:-}
-    container_name: phoenix-dev-backend
+    container_name: figaro-dev-backend
     restart: unless-stopped
     working_dir: /workspace
     command: >
@@ -52,13 +52,13 @@ services:
       no_proxy: localhost,127.0.0.1,postgres
       NVIDIA_VISIBLE_DEVICES: all
       NVIDIA_DRIVER_CAPABILITIES: compute,utility
-      PROJECT_NAME: Phoenix
+      PROJECT_NAME: Figaro
       API_PREFIX: /api/v1
       FRONTEND_URL: http://localhost:5173
       ALLOWED_ORIGINS: http://localhost:5173,http://127.0.0.1:5173,http://localhost
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
-      POSTGRES_DB: ${POSTGRES_DB:-phoenix}
+      POSTGRES_DB: ${POSTGRES_DB:-figaro}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_POOL_SIZE: "5"
@@ -70,14 +70,14 @@ services:
     gpus: all
     volumes:
       - ./:/workspace
-      - phoenix_uv_cache:/root/.cache/uv
+      - figaro_uv_cache:/root/.cache/uv
     depends_on:
       postgres:
         condition: service_healthy
 
   frontend:
     image: node:20-bookworm
-    container_name: phoenix-dev-frontend
+    container_name: figaro-dev-frontend
     restart: unless-stopped
     working_dir: /workspace/apps/frontend
     command: >
@@ -91,13 +91,13 @@ services:
       - "5173:5173"
     volumes:
       - ./:/workspace
-      - phoenix_pnpm_store:/root/.local/share/pnpm/store
-      - phoenix_frontend_node_modules:/workspace/apps/frontend/node_modules
+      - figaro_pnpm_store:/root/.local/share/pnpm/store
+      - figaro_frontend_node_modules:/workspace/apps/frontend/node_modules
     depends_on:
       - backend
 
 volumes:
-  phoenix_postgres_data:
-  phoenix_uv_cache:
-  phoenix_pnpm_store:
-  phoenix_frontend_node_modules:
+  figaro_postgres_data:
+  figaro_uv_cache:
+  figaro_pnpm_store:
+  figaro_frontend_node_modules:

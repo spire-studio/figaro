@@ -1,9 +1,8 @@
 """
 Helpers for inspecting the current federated learning stack capabilities.
 
-This is a backend-friendly adaptation of the legacy `utils.capabilities`
-module and is intended to be used by the Agent to ground its proposals
-in the actually supported datasets, models, aggregations, attacks, etc.
+Used by the Agent to ground its proposals in the actually supported
+datasets, models, and aggregations.
 """
 
 from __future__ import annotations
@@ -11,7 +10,7 @@ from __future__ import annotations
 import ast
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List
 
 
 def _read_text(path: Path) -> str:
@@ -68,58 +67,24 @@ def _extract_model_registry_keys(project_root: Path) -> List[str]:
     return out
 
 
-def _extract_aggregation_strategies(project_root: Path) -> Tuple[List[str], List[str]]:
+def _extract_aggregation_strategies(project_root: Path) -> List[str]:
     """
-    Returns (aggregations, defenses) from federated/aggregation.py without imports.
+    Returns aggregation strategies from federated/aggregation.py without imports.
     """
     path = project_root / "libs" / "fl_core" / "federated" / "aggregation.py"
     if not path.exists():
-        return [], []
-    text = _read_text(path)
-
-    aggregations: List[str] = []
-    defenses: List[str] = []
-
-    match = re.search(
-        r"_strategies\s*=\s*\{(.*?)\}\s*\n\s*_defense_strategies",
-        text,
-        flags=re.DOTALL,
-    )
-    if match:
-        aggregations = re.findall(r"['\"]([a-zA-Z0-9_]+)['\"]\s*:", match.group(1))
-
-    defenses = re.findall(
-        r"register_defense_strategy\(\s*['\"]([a-zA-Z0-9_]+)['\"]",
-        text,
-        flags=re.DOTALL,
-    )
-
-    def _dedup(values: List[str]) -> List[str]:
-        seen: set[str] = set()
-        out: List[str] = []
-        for item in values:
-            lower = item.lower()
-            if lower not in seen:
-                seen.add(lower)
-                out.append(lower)
-        return out
-
-    return _dedup(aggregations), _dedup(defenses)
-
-
-def _extract_attack_types_from_file(path: Path) -> List[str]:
-    if not path.exists():
         return []
     text = _read_text(path)
-    types = re.findall(
-        r"(?:if|elif)\s+attack_type\s*==\s*['\"]([a-zA-Z0-9_]+)['\"]",
-        text,
-        flags=re.DOTALL,
-    )
+
+    match = re.search(r"_strategies\s*=\s*\{(.*?)\}", text, flags=re.DOTALL)
+    if not match:
+        return []
+    aggregations = re.findall(r"['\"]([a-zA-Z0-9_]+)['\"]\s*:", match.group(1))
+
     seen: set[str] = set()
     out: List[str] = []
-    for t in types:
-        lower = t.lower()
+    for item in aggregations:
+        lower = item.lower()
         if lower not in seen:
             seen.add(lower)
             out.append(lower)
@@ -129,17 +94,13 @@ def _extract_attack_types_from_file(path: Path) -> List[str]:
 def get_platform_capabilities(project_root: Path | None = None) -> Dict[str, Any]:
     """
     Inspect the current codebase and return the supported configuration options
-    for datasets, models, aggregations, defenses, and attacks.
+    for datasets, models, and aggregations.
     """
     root = project_root or Path(__file__).resolve().parents[4]
 
     datasets = _extract_supported_datasets(root)
     models = _extract_model_registry_keys(root)
-    aggregations, defenses = _extract_aggregation_strategies(root)
-
-    attacks_dir = root / "libs" / "fl_core" / "attacks"
-    data_attacks = _extract_attack_types_from_file(attacks_dir / "data_poison.py")
-    model_attacks = _extract_attack_types_from_file(attacks_dir / "model_poison.py")
+    aggregations = _extract_aggregation_strategies(root)
 
     metrics = {
         "global_results": ["rounds", "global_loss", "global_accuracy"],
@@ -151,8 +112,6 @@ def get_platform_capabilities(project_root: Path | None = None) -> Dict[str, Any
         "distributions": ["iid", "non_iid"],
         "models": models,
         "aggregations": aggregations,
-        "defenses": defenses,
-        "attacks": {"data": data_attacks, "model": model_attacks},
         "metrics": metrics,
     }
 

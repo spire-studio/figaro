@@ -34,9 +34,6 @@ def test_build_initial_config_uses_schema_defaults():
     assert cfg["federated"]["clients_per_round"] == 10
     assert cfg["federated"]["local_epochs"] == 2
     assert cfg["federated"]["learning_rate"] == 0.01
-    # Bench mode does not include attack/defense in initial config
-    assert "attack" not in cfg
-    assert "defense" not in cfg
 
 
 def test_build_initial_config_hardcoded_defaults_on_empty_schema():

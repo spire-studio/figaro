@@ -14,8 +14,6 @@ export type RunMetrics = {
   experiment_info: {
     basic: Record<string, unknown>;
     federated: Record<string, unknown>;
-    attack: Record<string, unknown>;
-    defense: Record<string, unknown>;
     security: Record<string, unknown>;
   };
   global_results: {

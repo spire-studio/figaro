@@ -13,27 +13,24 @@ from fl_core.privacy.encryption import CKKSManager
 
 
 class FederatedServer:
-    def __init__(self, 
+    def __init__(self,
                  global_model: nn.Module,
                  aggregation_method: str = "fedavg",
                  device: torch.device = None,
-                 config: Optional[Dict[str, Any]] = None,
                  ckks_manager: Optional[CKKSManager] = None):
         self.device = device if device else torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.global_model = global_model.to(self.device)
         self.aggregation_method = aggregation_method.lower()
-        self.config = config
-        
+
         self.supported_methods = AggregationFactory.get_supported_strategies()
-        
+
         if self.aggregation_method not in self.supported_methods:
             raise ValueError(f"不支持的聚合方法: {aggregation_method}. "
                            f"支持的方法: {self.supported_methods}")
-        
+
         self.aggregator = AggregationFactory.create_aggregator(
-            self.aggregation_method, 
-            self.device, 
-            config=self.config
+            self.aggregation_method,
+            self.device,
         )
         
         self.current_round = 0

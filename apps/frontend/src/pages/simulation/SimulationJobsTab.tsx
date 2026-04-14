@@ -73,7 +73,6 @@ export function SimulationJobsTab(props: SimulationPageProps) {
     newJobDescription,
     newJobName,
     nodeCenter,
-    nodeIsAttacker,
     notifyError,
     onCanvasDragLeave,
     onCanvasDragOver,
@@ -391,7 +390,7 @@ export function SimulationJobsTab(props: SimulationPageProps) {
                                 y1={clientEdge.y}
                                 x2={serverEdge.x}
                                 y2={serverEdge.y}
-                                stroke={nodeIsAttacker(client) ? "#ef4444" : "#64748b"}
+                                stroke="#64748b"
                                 strokeWidth={2}
                                 strokeOpacity={0.9}
                               />
@@ -418,7 +417,6 @@ export function SimulationJobsTab(props: SimulationPageProps) {
                           >
                             <div className="mb-1 flex items-center justify-between pr-7 text-[11px] text-muted-foreground">
                               <span>{node.role}</span>
-                              {node.role === "client" && nodeIsAttacker(node) && <Badge variant="danger">attacker</Badge>}
                             </div>
                             <div className="truncate pr-7 text-sm font-medium">{node.label}</div>
                             {node.role === "client" && (

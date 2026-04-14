@@ -4,7 +4,6 @@ Service layer for simulation job management.
 
 from __future__ import annotations
 
-import math
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
@@ -231,18 +230,6 @@ class SimulationJobService:
         system["mode"] = "simulation"
         system["node_role"] = "server"
 
-        attack = merged.get("attack")
-        malicious_count = 0
-        if isinstance(attack, dict):
-            malicious_clients = cls._normalize_attack_settings(merged, attack)
-            malicious_count = len(malicious_clients)
-
-        defense = merged.get("defense")
-        if isinstance(defense, dict):
-            defense_params = defense.get("defense_params")
-            if isinstance(defense_params, dict):
-                defense_params["num_malicious"] = malicious_count
-
         cls._validate_config_node(merged, schema, path_prefix="")
         return merged
 
@@ -296,8 +283,6 @@ class SimulationJobService:
 
         for key in config_node:
             if key not in allowed_keys:
-                if path_prefix == "attack" and key == "client_settings" and isinstance(config_node[key], dict):
-                    continue
                 full_path = f"{path_prefix}.{key}" if path_prefix else key
                 raise exceptions.BadRequestError(f"Unknown config field: {full_path}")
 
@@ -451,131 +436,6 @@ class SimulationJobService:
             return ""
         return ""
 
-    @classmethod
-    def _normalize_attack_settings(
-        cls,
-        merged_config: dict[str, Any],
-        attack: dict[str, Any],
-    ) -> list[int]:
-        """
-        Normalize attack intent and deterministically derive malicious clients.
-        """
-        attacker_selector = attack.get("attacker_selector")
-        if not isinstance(attacker_selector, dict):
-            attacker_selector = {}
-            attack["attacker_selector"] = attacker_selector
-
-        malicious_clients = attack.get("malicious_clients")
-        if not isinstance(malicious_clients, list):
-            malicious_clients = []
-        malicious_clients = cls._normalize_malicious_client_ids(malicious_clients)
-
-        default_mode = "explicit_ids"
-        if malicious_clients:
-            default_mode = "explicit_ids"
-        elif cls._as_positive_int(attacker_selector.get("count")) is not None:
-            default_mode = "count"
-        elif cls._as_positive_ratio(attacker_selector.get("ratio")) is not None:
-            default_mode = "ratio"
-
-        mode = attacker_selector.get("mode")
-        if not isinstance(mode, str) or not mode.strip():
-            mode = default_mode
-        attacker_selector["mode"] = mode
-
-        selection_policy = attacker_selector.get("selection_policy")
-        if not isinstance(selection_policy, str) or not selection_policy.strip():
-            selection_policy = "lowest_ids"
-        attacker_selector["selection_policy"] = selection_policy
-
-        enabled = bool(attack.get("enable"))
-        if not enabled:
-            attack["enable"] = False
-            attack["malicious_clients"] = []
-            return []
-
-        num_clients = cls._resolve_num_clients(merged_config)
-        derived_clients = cls._resolve_malicious_clients(
-            num_clients=num_clients,
-            mode=mode,
-            malicious_clients=malicious_clients,
-            attacker_selector=attacker_selector,
-        )
-        attack["enable"] = True
-        attack["malicious_clients"] = derived_clients
-        return derived_clients
-
-    @classmethod
-    def _resolve_num_clients(cls, merged_config: dict[str, Any]) -> int:
-        federated = merged_config.get("federated")
-        if isinstance(federated, dict):
-            value = federated.get("num_clients")
-            if isinstance(value, int) and value > 0:
-                return value
-            if isinstance(value, float) and float(value).is_integer() and value > 0:
-                return int(value)
-        raise exceptions.BadRequestError("federated.num_clients must be a positive integer when attack is enabled")
-
-    @classmethod
-    def _resolve_malicious_clients(
-        cls,
-        *,
-        num_clients: int,
-        mode: str,
-        malicious_clients: list[int],
-        attacker_selector: dict[str, Any],
-    ) -> list[int]:
-        if mode == "explicit_ids":
-            if not malicious_clients:
-                raise exceptions.BadRequestError(
-                    "attack.malicious_clients must contain at least one client when attacker_selector.mode is explicit_ids"
-                )
-            cls._validate_client_ids_within_range(malicious_clients, num_clients)
-            return malicious_clients
-
-        if mode == "count":
-            count = cls._as_positive_int(attacker_selector.get("count"))
-            if count is None:
-                raise exceptions.BadRequestError(
-                    "attack.attacker_selector.count must be a positive integer when attacker_selector.mode is count"
-                )
-            if count > num_clients:
-                raise exceptions.BadRequestError("attack.attacker_selector.count cannot exceed federated.num_clients")
-            return cls._select_lowest_client_ids(count)
-
-        if mode == "ratio":
-            ratio = cls._as_positive_ratio(attacker_selector.get("ratio"))
-            if ratio is None:
-                raise exceptions.BadRequestError(
-                    "attack.attacker_selector.ratio must be in (0, 1] when attacker_selector.mode is ratio"
-                )
-            count = max(1, math.ceil(num_clients * ratio))
-            count = min(count, num_clients)
-            return cls._select_lowest_client_ids(count)
-
-        raise exceptions.BadRequestError(f"Unsupported attack.attacker_selector.mode: {mode}")
-
-    @staticmethod
-    def _normalize_malicious_client_ids(values: list[Any]) -> list[int]:
-        normalized: list[int] = []
-        for item in values:
-            if isinstance(item, bool) or not isinstance(item, int) or item < 0:
-                raise exceptions.BadRequestError("attack.malicious_clients must be a list of non-negative integers")
-            normalized.append(item)
-        return sorted(set(normalized))
-
-    @staticmethod
-    def _validate_client_ids_within_range(client_ids: list[int], num_clients: int) -> None:
-        for client_id in client_ids:
-            if client_id >= num_clients:
-                raise exceptions.BadRequestError(
-                    "attack.malicious_clients contains a client id outside federated.num_clients"
-                )
-
-    @staticmethod
-    def _select_lowest_client_ids(count: int) -> list[int]:
-        return list(range(count))
-
     @staticmethod
     def _as_positive_int(value: Any) -> int | None:
         if isinstance(value, bool):
@@ -584,13 +444,4 @@ class SimulationJobService:
             return value
         if isinstance(value, float) and float(value).is_integer() and value > 0:
             return int(value)
-        return None
-
-    @staticmethod
-    def _as_positive_ratio(value: Any) -> float | None:
-        if isinstance(value, bool) or not isinstance(value, (int, float)):
-            return None
-        ratio = float(value)
-        if 0 < ratio <= 1:
-            return ratio
         return None

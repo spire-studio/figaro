@@ -22,7 +22,6 @@ import {
   makeInitialTopologyNodes,
   nextClientId,
   nodeCenter,
-  nodeIsAttacker,
   normalizeClientId,
   parseJsonObject,
   rectEdgePoint,
@@ -124,23 +123,10 @@ export function useSimulationController(): SimulationPageProps {
     () => (isRecord(runMetrics.experiment_info.federated) ? runMetrics.experiment_info.federated : {}),
     [runMetrics],
   );
-  const experimentAttack = useMemo(
-    () => (isRecord(runMetrics.experiment_info.attack) ? runMetrics.experiment_info.attack : {}),
-    [runMetrics],
-  );
-  const experimentDefense = useMemo(
-    () => (isRecord(runMetrics.experiment_info.defense) ? runMetrics.experiment_info.defense : {}),
-    [runMetrics],
-  );
   const experimentSecurity = useMemo(
     () => (isRecord(runMetrics.experiment_info.security) ? runMetrics.experiment_info.security : {}),
     [runMetrics],
   );
-  const attackEnabled = Boolean(experimentAttack.enabled ?? experimentAttack.enable);
-  const maliciousClients = Array.isArray(experimentAttack.malicious_clients)
-    ? experimentAttack.malicious_clients.map((item) => String(item)).filter((item) => item.length > 0)
-    : [];
-  const defenseParams = isRecord(experimentDefense.params) ? experimentDefense.params : {};
   const encryptionInfo = isRecord(experimentSecurity.encryption) ? experimentSecurity.encryption : {};
   const compressionInfo = isRecord(experimentSecurity.compression) ? experimentSecurity.compression : {};
 
@@ -734,7 +720,6 @@ export function useSimulationController(): SimulationPageProps {
   return {
     MiniLineChart,
     activeTab,
-    attackEnabled,
     busy,
     canvasHighlighted,
     canvasRef,
@@ -749,16 +734,13 @@ export function useSimulationController(): SimulationPageProps {
     compressionInfo,
     configJsonError,
     configSchema,
-    defenseParams,
     deleteJobTarget,
     deleteSelectedTopologyNode,
     deleteTopologyNode,
     editingJobDescription,
     editingJobName,
     encryptionInfo,
-    experimentAttack,
     experimentBasic,
-    experimentDefense,
     experimentFederated,
     globalAccuracySeries,
     globalLossSeries,
@@ -777,11 +759,9 @@ export function useSimulationController(): SimulationPageProps {
     jobs,
     loadRunBundle,
     loadRunMetrics,
-    maliciousClients,
     newJobDescription,
     newJobName,
     nodeCenter,
-    nodeIsAttacker,
     notifyError,
     onCanvasDragLeave,
     onCanvasDragOver,

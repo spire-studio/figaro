@@ -48,7 +48,6 @@ export function useDistributedController({
   const [clientServerApiBase, setClientServerApiBase] = useState(DEFAULT_DISTRIBUTED_SERVER_API_BASE);
   const [clientSessionId, setClientSessionId] = useState("");
   const [clientName, setClientName] = useState("");
-  const [clientIsMalicious, setClientIsMalicious] = useState(false);
   const [clientConnecting, setClientConnecting] = useState(false);
   const [connectedClientId, setConnectedClientId] = useState<string | null>(null);
   const [connectedClientInfo, setConnectedClientInfo] = useState<DistributedPageProps["connectedClientInfo"]>(null);
@@ -182,9 +181,6 @@ export function useDistributedController({
       setValueByPath(nextConfig, "system.node_role", "server");
       setValueByPath(nextConfig, "federated.num_clients", clientCount);
       setValueByPath(nextConfig, "dataset.num_clients", clientCount);
-      setValueByPath(nextConfig, "attack.enable", false);
-      setValueByPath(nextConfig, "attack.malicious_clients", []);
-      setValueByPath(nextConfig, "defense.defense_params.num_malicious", 0);
       const updated = await distributedApi.updateJobConfig(distributedConfigJobId, { config: nextConfig });
       await refreshDistributedJobs();
       setSelectedDistributedJobId(updated.id);
@@ -317,7 +313,7 @@ export function useDistributedController({
     try {
       const connected = await distributedApi.requestConnect(
         sessionId,
-        { participant_name: name, metadata_json: { source: "distributed-client-ui", is_malicious: clientIsMalicious } },
+        { participant_name: name, metadata_json: { source: "distributed-client-ui" } },
         base,
       );
       setClientConnecting(false);
@@ -496,7 +492,6 @@ export function useDistributedController({
     busy,
     clientConnecting,
     clientConnectionMessage,
-    clientIsMalicious,
     clientName,
     clientServerApiBase,
     clientSessionId,
@@ -536,7 +531,6 @@ export function useDistributedController({
     renderSchemaSection,
     selectedDistributedJob,
     selectedDistributedJobId,
-    setClientIsMalicious,
     setClientName,
     setClientServerApiBase,
     setClientSessionId,

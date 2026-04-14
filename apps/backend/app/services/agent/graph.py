@@ -157,7 +157,7 @@ class FederatedAgentGraphBuilder:
         base_config = build_initial_config(schema)
 
         max_wait_seconds = 3600
-        poll_interval = 5
+        poll_interval = 2
         total = len(state.experiments)
 
         for idx, plan in enumerate(state.experiments):
@@ -198,7 +198,7 @@ class FederatedAgentGraphBuilder:
             state.current_job_name = experiment.name
             state.current_run_id = run_id
             state.current_run_status = str(run.status)
-            state.phase = f"running {idx + 1}/{total}: {exp_name}"
+            state.phase = self._truncate_phase(f"running {idx + 1}/{total}: {exp_name}")
             await self._publish_progress(state)
 
             # -- Wait for completion --
@@ -309,6 +309,16 @@ class FederatedAgentGraphBuilder:
         if self._progress_callback is None:
             return
         await self._progress_callback(state)
+
+    # agent_optimization_jobs.current_phase is VARCHAR(255) in Postgres; never
+    # serialize anything longer or the whole agent task crashes on snapshot persist.
+    _PHASE_MAX_LEN = 255
+
+    @classmethod
+    def _truncate_phase(cls, value: str) -> str:
+        if len(value) <= cls._PHASE_MAX_LEN:
+            return value
+        return value[: cls._PHASE_MAX_LEN - 1] + "…"
 
     @staticmethod
     def _deep_merge_dicts(base: dict, override: dict) -> dict:

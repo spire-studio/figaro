@@ -205,7 +205,7 @@ export function DistributedServerPanel(props: DistributedPageProps) {
                             <Badge variant={distributedClientStatusVariant[item.status] ?? "secondary"}>{item.status}</Badge>
                           </div>
                           <div className="text-xs text-muted-foreground">
-                            participant_id={item.assigned_participant_id ?? "-"}, malicious={item.is_malicious ? "yes" : "no"}
+                            participant_id={item.assigned_participant_id ?? "-"}
                           </div>
                           {item.status === "pending_approval" && (
                             <div className="mt-2 flex gap-2">
@@ -288,7 +288,7 @@ export function DistributedServerPanel(props: DistributedPageProps) {
         open={distributedConfigDialogOpen}
         onOpenChange={setDistributedConfigDialogOpen}
         title="Distributed Job Config"
-        description="Edit server-side config fields. Client attack behavior is configured by each client itself."
+        description="Edit server-side config fields."
         busy={busy}
         schema={configSchema}
         role="server"

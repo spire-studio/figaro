@@ -32,7 +32,6 @@ class DistributedParticipantResponse(BaseModel):
     session_id: str
     participant_name: str
     assigned_participant_id: int | None
-    is_malicious: bool
     status: DistributedParticipantStatus
     metadata_json: dict[str, Any]
     requested_at: datetime

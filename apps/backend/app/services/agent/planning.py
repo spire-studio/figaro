@@ -25,6 +25,7 @@ def build_initial_config(schema: dict[str, Any]) -> dict[str, Any]:
             "clients_per_round": federated.get("clients_per_round", {}).get("default", 5),
             "local_epochs": federated.get("local_epochs", {}).get("default", 5),
             "learning_rate": federated.get("learning_rate", {}).get("default", 0.01),
+            "seed": federated.get("seed", {}).get("default", 42),
         },
     }
 

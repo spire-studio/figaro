@@ -18,53 +18,7 @@ federated:
   learning_rate: 0.01
   aggregation: fedavg
   num_clients: 3
-attack:
-  enable: true
-  malicious_clients:
-  - 0
-  - 1
-  - 2
-  attack_category: data
-  attack_type: label_flipping
-  attack_params:
-    flip_ratio: 1
-    noise_scale: 0.5
-    scale_factor: 10
-    attack_strength: 5
-  client_settings:
-    0:
-      attack_category: data
-      attack_type: label_flipping
-      attack_params:
-        flip_ratio: 1
-        noise_scale: 0.5
-        scale_factor: 10
-        attack_strength: 5
-    1:
-      attack_category: data
-      attack_type: label_flipping
-      attack_params:
-        flip_ratio: 1
-        noise_scale: 0.5
-        scale_factor: 10
-        attack_strength: 5
-    2:
-      attack_category: data
-      attack_type: label_flipping
-      attack_params:
-        flip_ratio: 1
-        noise_scale: 0.5
-        scale_factor: 10
-        attack_strength: 5
-defense:
-  enable: true
-  strategy: median
-  defense_params:
-    num_malicious: 3
-    multi_krum: false
-    coordinate_wise: true
-    trimmed_mean: false
-    trim_ratio: 0.1
+  seed: 42
 compression:
   sparsification:
     enable: false

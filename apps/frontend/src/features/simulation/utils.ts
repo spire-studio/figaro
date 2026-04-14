@@ -18,7 +18,6 @@ export const DEFAULT_JOB_CONFIG = {
   system: { mode: "simulation" as SystemMode },
   dataset: { name: "CIFAR-10", data_dir: "./datasets", distribution: "non_iid", alpha: 0.5 },
   federated: { num_clients: 3, num_rounds: 10, clients_per_round: 3, local_epochs: 5, learning_rate: 0.01 },
-  attack: { enable: false, malicious_clients: [] as number[], attack_category: "data", attack_type: "label_flipping" },
 };
 
 export type SchemaFieldType = "text" | "number" | "bool" | "select" | "list_int";
@@ -78,8 +77,6 @@ export const EMPTY_RUN_METRICS: RunMetrics = {
   experiment_info: {
     basic: {},
     federated: {},
-    attack: {},
-    defense: {},
     security: {},
   },
   global_results: {
@@ -295,10 +292,6 @@ export function buildConfigFromSchema(schema: Record<string, unknown>, propertie
   return output;
 }
 
-export function nodeIsAttacker(node: TopologyNode): boolean {
-  return Boolean(getValueByPath(node.properties, "attack.enable"));
-}
-
 export function createNodeProperties(
   schema: Record<string, unknown> | null,
   role: NodeRole,
@@ -314,7 +307,6 @@ export function createNodeProperties(
   if (role === "client") {
     const safeId = normalizeClientId(clientId);
     setValueByPath(properties, "distributed.client_id", safeId);
-    setValueByPath(properties, "attack.enable", false);
   }
 
   return properties;
@@ -423,46 +415,10 @@ export function buildConfigFromTopology(
     : deepMerge(structuredClone(DEFAULT_JOB_CONFIG as Record<string, unknown>), serverProps);
 
   const clients = nodes.filter((node) => node.role === "client");
-  const malicious = clients
-    .filter((node) => nodeIsAttacker(node))
-    .map((node) => node.clientId)
-    .filter((id): id is number => id !== null)
-    .sort((a, b) => a - b);
 
   setValueByPath(config, "system.mode", mode);
   setValueByPath(config, "dataset.num_clients", clients.length);
   setValueByPath(config, "federated.num_clients", clients.length);
-  setValueByPath(config, "attack.enable", malicious.length > 0);
-  setValueByPath(config, "attack.malicious_clients", malicious);
-  setValueByPath(config, "defense.defense_params.num_malicious", malicious.length);
-
-  const globalAttack = isRecord(getValueByPath(config, "attack")) ? (getValueByPath(config, "attack") as Record<string, unknown>) : {};
-  const globalAttackCategory = globalAttack.attack_category ?? "data";
-  const globalAttackType = globalAttack.attack_type ?? "label_flipping";
-  const globalAttackParams = isRecord(globalAttack.attack_params) ? (globalAttack.attack_params as Record<string, unknown>) : {};
-
-  const clientSettings: Record<number, unknown> = {};
-  for (const client of clients) {
-    if (client.clientId === null || !nodeIsAttacker(client)) continue;
-    const attack = isRecord(getValueByPath(client.properties, "attack"))
-      ? (getValueByPath(client.properties, "attack") as Record<string, unknown>)
-      : {};
-    const attackParams = isRecord(attack.attack_params) ? attack.attack_params : globalAttackParams;
-    clientSettings[client.clientId] = {
-      attack_category: attack.attack_category ?? globalAttackCategory,
-      attack_type: attack.attack_type ?? globalAttackType,
-      attack_params: attackParams,
-    };
-  }
-
-  if (malicious.length > 0) {
-    setValueByPath(config, "attack.client_settings", clientSettings);
-  } else {
-    const attackSection = getValueByPath(config, "attack");
-    if (isRecord(attackSection) && "client_settings" in attackSection) {
-      delete attackSection.client_settings;
-    }
-  }
 
   return config;
 }
@@ -472,27 +428,15 @@ export function topologyFromConfig(
   schema: Record<string, unknown> | null,
 ): { nodes: TopologyNode[]; mode: SystemMode } {
   const federated = (config.federated ?? {}) as Record<string, unknown>;
-  const attack = (config.attack ?? {}) as Record<string, unknown>;
   const system = (config.system ?? {}) as Record<string, unknown>;
 
   const mode = system.mode === "distributed" ? "distributed" : "simulation";
   const rawNum = Number(federated.num_clients ?? 3);
   const numClients = Number.isFinite(rawNum) && rawNum > 0 ? Math.floor(rawNum) : 3;
 
-  const maliciousSet = new Set<number>(
-    Array.isArray(attack.malicious_clients)
-      ? attack.malicious_clients.map((item) => Number(item)).filter((item) => Number.isFinite(item)).map((item) => Math.floor(item))
-      : [],
-  );
   const baseProperties = schema
     ? deepMerge(initDefaultsFromSchema(schema), config)
     : deepMerge(structuredClone(DEFAULT_JOB_CONFIG as Record<string, unknown>), config);
-  const globalAttackCategory = getValueByPath(baseProperties, "attack.attack_category") ?? "data";
-  const globalAttackType = getValueByPath(baseProperties, "attack.attack_type") ?? "label_flipping";
-  const globalAttackParams = isRecord(getValueByPath(baseProperties, "attack.attack_params"))
-    ? (getValueByPath(baseProperties, "attack.attack_params") as Record<string, unknown>)
-    : {};
-  const clientSettings = isRecord(attack.client_settings) ? attack.client_settings : {};
 
   const clients: TopologyNode[] = Array.from({ length: numClients }, (_, index) => {
     const position = getClientLayoutPoint(index, numClients);
@@ -508,23 +452,6 @@ export function topologyFromConfig(
         setValueByPath(clientProps, "system.mode", mode);
         setValueByPath(clientProps, "system.node_role", "client");
         setValueByPath(clientProps, "distributed.client_id", index);
-
-        const isMalicious = maliciousSet.has(index);
-        setValueByPath(clientProps, "attack.enable", isMalicious);
-        if (isMalicious) {
-          const specific = isRecord(clientSettings[index])
-            ? (clientSettings[index] as Record<string, unknown>)
-            : (isRecord(clientSettings[String(index)])
-                ? (clientSettings[String(index)] as Record<string, unknown>)
-                : {});
-          setValueByPath(clientProps, "attack.attack_category", specific.attack_category ?? globalAttackCategory);
-          setValueByPath(clientProps, "attack.attack_type", specific.attack_type ?? globalAttackType);
-          setValueByPath(
-            clientProps,
-            "attack.attack_params",
-            isRecord(specific.attack_params) ? specific.attack_params : globalAttackParams,
-          );
-        }
         return clientProps;
       })(),
     };
