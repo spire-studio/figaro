@@ -60,7 +60,7 @@ fi
 BUILD_ARGS+=("${SERVICE}")
 BUILD_ARGS+=("${EXTRA_ARGS[@]}")
 
-echo "[phoenix-dev] building service='${SERVICE}' with proxy"
+echo "[figaro-dev] building service='${SERVICE}' with proxy"
 echo "  HTTP_PROXY=${HTTP_PROXY_VALUE}"
 echo "  HTTPS_PROXY=${HTTPS_PROXY_VALUE}"
 echo "  ALL_PROXY=${ALL_PROXY_VALUE}"
@@ -82,5 +82,5 @@ echo "  NO_PROXY=${NO_PROXY_VALUE}"
 
 echo
 
-echo "[phoenix-dev] build completed"
+echo "[figaro-dev] build completed"
 echo "next: sudo docker compose -f ${ROOT_DIR}/${COMPOSE_FILE_REL} up -d --force-recreate ${SERVICE}"

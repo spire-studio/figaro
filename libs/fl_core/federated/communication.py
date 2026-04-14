@@ -25,7 +25,6 @@ class GRPCClientProxy:
         self.client_id = client_id
         self.instruction_queue = queue.Queue()
         self.result_queue = queue.Queue()
-        self.is_malicious = False 
         self.latest_global_params = None
         self._test_samples = 0
         self._train_samples = 0

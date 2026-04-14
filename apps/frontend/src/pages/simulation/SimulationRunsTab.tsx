@@ -21,18 +21,14 @@ import type { Run, RunLog, SimulationPageProps } from "../types";
 export function SimulationRunsTab(props: SimulationPageProps) {
   const {
     MiniLineChart,
-    attackEnabled,
     busy,
     clientTestAccSeries,
     clientTestLossSeries,
     clientTrainAccSeries,
     clientTrainLossSeries,
     compressionInfo,
-    defenseParams,
     encryptionInfo,
-    experimentAttack,
     experimentBasic,
-    experimentDefense,
     experimentFederated,
     globalAccuracySeries,
     globalLossSeries,
@@ -42,7 +38,6 @@ export function SimulationRunsTab(props: SimulationPageProps) {
     isRecord,
     loadRunBundle,
     loadRunMetrics,
-    maliciousClients,
     notifyError,
     runLogs,
     runLogsRef,
@@ -280,54 +275,11 @@ export function SimulationRunsTab(props: SimulationPageProps) {
                     </CardContent>
                   </Card>
 
-                  <Card className="border-red-200/60 bg-red-50/40 dark:border-red-900/40 dark:bg-red-950/20">
-                    <CardHeader className="pb-2">
-                      <div className="flex items-center justify-between gap-2">
-                        <CardTitle className="text-sm">Attack Details</CardTitle>
-                        <Badge variant={attackEnabled ? "danger" : "outline"}>{attackEnabled ? "Enabled" : "Disabled"}</Badge>
-                      </div>
-                    </CardHeader>
-                    <CardContent className="space-y-2 text-sm">
-                      <div>
-                        <p className="text-xs text-muted-foreground">Strategy</p>
-                        <p>{toDisplayText(experimentAttack.global_type, "None")}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground">Malicious Clients</p>
-                        <p>{maliciousClients.length > 0 ? maliciousClients.map((clientId: string) => `#${clientId}`).join(", ") : "None"}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground">Per-client Rules</p>
-                        <p>{isRecord(experimentAttack.per_client_settings) ? Object.keys(experimentAttack.per_client_settings).length : 0}</p>
-                      </div>
-                    </CardContent>
-                  </Card>
-
                   <Card className="border-emerald-200/60 bg-emerald-50/40 dark:border-emerald-900/40 dark:bg-emerald-950/20">
                     <CardHeader className="pb-2">
-                      <CardTitle className="text-sm">Security &amp; Defense</CardTitle>
+                      <CardTitle className="text-sm">Security</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-3 text-sm">
-                      <div>
-                        <p className="text-xs text-muted-foreground">Defense</p>
-                        <p>
-                          {toDisplayText(experimentDefense.strategy, "None")}
-                          {Boolean(experimentDefense.enabled) ? " (enabled)" : " (disabled)"}
-                        </p>
-                        <div className="mt-1 flex flex-wrap gap-1">
-                          {Object.entries(defenseParams)
-                            .slice(0, 6)
-                            .map(([key, value]) => (
-                              <span
-                                key={`defense-${key}`}
-                                className="rounded border bg-background/80 px-1.5 py-0.5 text-[11px] text-muted-foreground"
-                              >
-                                {key}: {String(value)}
-                              </span>
-                            ))}
-                          {Object.keys(defenseParams).length === 0 && <span className="text-xs text-muted-foreground">No defense params</span>}
-                        </div>
-                      </div>
                       <div className="grid grid-cols-2 gap-2">
                         <div className="rounded-md border bg-background/70 p-2">
                           <p className="text-[11px] text-muted-foreground">Encryption</p>

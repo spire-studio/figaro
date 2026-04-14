@@ -33,7 +33,7 @@ fi
 
 COMPOSE_ARGS=(-f "${COMPOSE_FILE}")
 
-echo "[phoenix-dist] starting independent server/client0/client1 stacks..."
+echo "[figaro-dist] starting independent server/client0/client1 stacks..."
 UP_ARGS=(up -d)
 if [[ ${USE_BUILD} -eq 1 ]]; then
   UP_ARGS+=(--build)
@@ -41,7 +41,7 @@ fi
 docker compose "${COMPOSE_ARGS[@]}" "${UP_ARGS[@]}" "${EXTRA_ARGS[@]}"
 
 echo
-echo "[phoenix-dist] started"
+echo "[figaro-dist] started"
 echo "  Network mode: host (backend services)"
 echo "  Server:"
 echo "    Frontend: http://127.0.0.1:${SERVER_WEB_PORT}"

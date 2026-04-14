@@ -16,7 +16,7 @@ class _FakeLLMService:
         self.instructions = instructions
         self.input_text = input_text
         return (
-            '{"iteration_goal":"baseline","plan_summary":"disable attack","config_patch":{"attack":{"enable":false}}}',
+            '{"iteration_goal":"baseline","plan_summary":"increase rounds","config_patch":{"federated":{"num_rounds":20}}}',
             {},
         )
 
@@ -32,8 +32,6 @@ class _FakeJobService:
             "dataset": {"name": {"default": "mnist"}},
             "model": {"name": {"default": "cnn"}},
             "federated": {},
-            "attack": {},
-            "defense": {},
         }
 
     @staticmethod
@@ -57,8 +55,6 @@ class _FakeJobService:
                     "local_epochs": 5,
                     "learning_rate": 0.01,
                 },
-                "attack": {"enable": False},
-                "defense": {"enable": True, "strategy": "median"},
             },
         )
 
@@ -99,9 +95,9 @@ def test_plan_node_uses_default_llm_config(monkeypatch):
         assert updated.iteration == 1
         assert updated.current_plan is not None
         assert updated.current_plan.iteration_goal == "baseline"
-        assert updated.current_plan.plan_summary == "disable attack"
-        assert updated.current_plan.config_patch == {}
-        assert updated.current_config["attack"]["enable"] is False
+        assert updated.current_plan.plan_summary == "increase rounds"
+        assert updated.current_plan.config_patch == {"federated": {"num_rounds": 20}}
+        assert updated.current_config["federated"]["num_rounds"] == 20
         assert updated.current_config["dataset"]["name"] == "mnist"
         assert updated.current_config["model"]["name"] == "cnn"
         assert llm_service.model == "default-test-model"
@@ -121,7 +117,7 @@ def test_launch_node_uses_persisted_normalized_config_and_job_name(monkeypatch):
         state = AgentState(
             goal="optimize",
             job_name="named-opt-job",
-            current_config={"attack": {"enable": False}},
+            current_config={"federated": {"num_rounds": 20}},
             iteration=1,
         )
 
@@ -131,7 +127,7 @@ def test_launch_node_uses_persisted_normalized_config_and_job_name(monkeypatch):
         assert updated.current_run_id == "run-1"
         assert updated.current_config["federated"]["num_rounds"] == 10
         assert fake_job_service.last_created_name == "named-opt-job"
-        assert fake_job_service.last_updated_config == {"attack": {"enable": False}}
+        assert fake_job_service.last_updated_config == {"federated": {"num_rounds": 20}}
 
     asyncio.run(_run())
 
@@ -160,8 +156,6 @@ def test_plan_node_hides_dataset_num_clients_from_agent_diff(monkeypatch):
             current_config={
                 "dataset": {"name": "mnist", "num_clients": 5},
                 "federated": {"num_clients": 5},
-                "attack": {"enable": False},
-                "defense": {"enable": True, "strategy": "median"},
             },
         )
 

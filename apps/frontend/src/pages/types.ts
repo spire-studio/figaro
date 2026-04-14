@@ -63,7 +63,6 @@ export type SimulationPageProps = {
   MiniLineChart: (props: MiniLineChartProps) => ReactNode;
   activeTab: TabKey;
   applyTopologyNodeConfig: (nodeId: string, properties: Record<string, unknown>) => void;
-  attackEnabled: boolean;
   busy: boolean;
   canvasHighlighted: boolean;
   canvasRef: RefObject<HTMLDivElement | null>;
@@ -77,16 +76,13 @@ export type SimulationPageProps = {
   compressionInfo: Record<string, unknown>;
   configJsonError: string | null;
   configSchema: Record<string, unknown> | null;
-  defenseParams: Record<string, unknown>;
   deleteJobTarget: Job | null;
   deleteSelectedTopologyNode: () => void;
   deleteTopologyNode: (nodeId: string) => void;
   editingJobDescription: string;
   editingJobName: string;
   encryptionInfo: Record<string, unknown>;
-  experimentAttack: Record<string, unknown>;
   experimentBasic: Record<string, unknown>;
-  experimentDefense: Record<string, unknown>;
   experimentFederated: Record<string, unknown>;
   globalAccuracySeries: LineSeries[];
   globalLossSeries: LineSeries[];
@@ -105,11 +101,9 @@ export type SimulationPageProps = {
   jobs: Job[];
   loadRunBundle: (runId: string) => Promise<void>;
   loadRunMetrics: (runId: string) => Promise<void>;
-  maliciousClients: string[];
   newJobDescription: string;
   newJobName: string;
   nodeCenter: (node: TopologyNode) => Point;
-  nodeIsAttacker: (node: TopologyNode) => boolean;
   notifyError: (error: unknown, id?: string) => void;
   onCanvasDragLeave: () => void;
   onCanvasDragOver: (event: ReactDragEvent<HTMLDivElement>) => void;
@@ -168,7 +162,6 @@ export type DistributedPageProps = {
   busy: boolean;
   clientConnecting: boolean;
   clientConnectionMessage: string;
-  clientIsMalicious: boolean;
   clientName: string;
   clientServerApiBase: string;
   clientSessionId: string;
@@ -214,7 +207,6 @@ export type DistributedPageProps = {
   ) => ReactNode[];
   selectedDistributedJob: DistributedJob | null;
   selectedDistributedJobId: number | null;
-  setClientIsMalicious: Dispatch<SetStateAction<boolean>>;
   setClientName: Dispatch<SetStateAction<string>>;
   setClientServerApiBase: Dispatch<SetStateAction<string>>;
   setClientSessionId: Dispatch<SetStateAction<string>>;

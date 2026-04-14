@@ -10,14 +10,14 @@ if ! command -v docker >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "[phoenix-dev] starting postgres + backend + frontend..."
+echo "[figaro-dev] starting postgres + backend + frontend..."
 (
   cd "${ROOT_DIR}"
   sudo docker compose -f "${COMPOSE_FILE_REL}" up -d
 )
 
 echo
-echo "[phoenix-dev] started"
+echo "[figaro-dev] started"
 echo "  Frontend: http://127.0.0.1:5173"
 echo "  Backend : http://127.0.0.1:8000"
 echo "  API Docs: http://127.0.0.1:8000/docs"

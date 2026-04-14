@@ -15,4 +15,4 @@ else
   docker compose -f "${COMPOSE_FILE}" down
 fi
 
-echo "[phoenix-dev] stopped"
+echo "[figaro-dev] stopped"

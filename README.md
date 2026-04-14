@@ -61,7 +61,7 @@ uv sync
 **Step 1 — PostgreSQL** (Docker or local):
 ```bash
 docker run -d --name figaro-pg -p 5433:5432 \
-  -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=phoenix postgres:16
+  -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=figaro postgres:16
 ```
 
 **Step 2 — Configure `.env`**:
@@ -74,7 +74,7 @@ cp .env.example .env
 
 **Step 3 — Backend**:
 ```bash
-POSTGRES_HOST=localhost POSTGRES_PORT=5433 POSTGRES_PASSWORD=postgres POSTGRES_DB=phoenix \
+POSTGRES_HOST=localhost POSTGRES_PORT=5433 POSTGRES_PASSWORD=postgres POSTGRES_DB=figaro \
   PYTHONPATH=libs:apps/backend/runners \
   uv run uvicorn app.main:app --app-dir apps/backend --host 0.0.0.0 --port 8000 --reload
 ```

@@ -32,8 +32,8 @@ LOG_LEVEL_INLINE_PATTERN = re.compile(
 )
 RUN_CONFIG_ARTIFACT = "run_config"
 TRAINING_RESULT_ARTIFACT = "training_result"
-RESULT_FILE_ENV_KEY = "PHOENIX_RESULTS_FILE"
-DISABLE_FILE_LOG_ENV_KEY = "PHOENIX_DISABLE_FILE_LOG"
+RESULT_FILE_ENV_KEY = "FIGARO_RESULTS_FILE"
+DISABLE_FILE_LOG_ENV_KEY = "FIGARO_DISABLE_FILE_LOG"
 TERMINAL_RUN_STATUSES = {
     SimulationRunStatus.SUCCEEDED,
     SimulationRunStatus.FAILED,
@@ -486,7 +486,12 @@ class SimulationRunService:
         if inline_match and " - " in message:
             return cls._normalize_log_level(inline_match.group(1))
 
-        return cls._normalize_log_level(stream_level)
+        # Ignore stream_level — many Python tools write plain INFO output to
+        # stderr. Only promote to ERROR when the content actually looks like one.
+        lowered = message.lower()
+        if "traceback" in lowered or "exception" in lowered or "error:" in lowered:
+            return "ERROR"
+        return "INFO"
 
 
     @staticmethod
@@ -496,6 +501,7 @@ class SimulationRunService:
         """
         return [
             sys.executable,
+            "-u",
             "apps/backend/runners/experiment_runner.py",
             "--mode",
             "simulation",

@@ -12,7 +12,7 @@ from enum import Enum
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import Boolean, Column, DateTime, Enum as SAEnum, ForeignKey, Integer, String
+from sqlalchemy import Column, DateTime, Enum as SAEnum, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.types import JSON
 from sqlmodel import Field, SQLModel
@@ -52,10 +52,6 @@ class DistributedParticipant(SQLModel, table=True):
     assigned_participant_id: int | None = Field(
         default=None,
         sa_column=Column(Integer, nullable=True, index=True),
-    )
-    is_malicious: bool = Field(
-        default=False,
-        sa_column=Column(Boolean, nullable=False),
     )
     status: DistributedParticipantStatus = Field(
         default=DistributedParticipantStatus.PENDING_APPROVAL,

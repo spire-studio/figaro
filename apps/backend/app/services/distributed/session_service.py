@@ -146,7 +146,6 @@ class DistributedSessionService:
             server_port=distributed_session.server_port,
             expected_clients=job.expected_clients,
             assigned_participant_id=participant.assigned_participant_id,
-            is_malicious=participant.is_malicious,
         )
         return {
             "participant_id": participant.id,

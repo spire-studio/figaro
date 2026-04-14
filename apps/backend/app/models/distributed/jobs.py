@@ -49,10 +49,6 @@ class DistributedJob(SQLModel, table=True):
         default_factory=dict,
         sa_column=Column(JSON().with_variant(JSONB, "postgresql"), nullable=False),
     )
-    malicious_client_ids_json: list[int] = Field(
-        default_factory=list,
-        sa_column=Column(JSON().with_variant(JSONB, "postgresql"), nullable=False),
-    )
     status: DistributedJobStatus = Field(
         default=DistributedJobStatus.DRAFT,
         sa_column=Column(SAEnum(DistributedJobStatus, name="distributedjobstatus"), nullable=False, index=True),

@@ -38,9 +38,6 @@ class FederatedClient:
             'rounds': []
         }
         
-        self.is_malicious = False
-        self.attack_config = None
-        
         self.logger = logging.getLogger(f'Client_{client_id}')
     
     def set_model_parameters(self, parameters: Dict[str, torch.Tensor]) -> None:
@@ -172,12 +169,6 @@ class FederatedClient:
         return avg_loss, accuracy
     
 
-    def update_train_data(self, new_data, new_labels):
-        self.train_data = new_data
-        self.train_labels = new_labels
-        
-        self.train_dataset = TensorDataset(torch.from_numpy(new_data), torch.from_numpy(new_labels))
-        print(f"Client {self.client_id}: 训练数据已更新 (Poisoned)")
     def get_training_history(self) -> Dict[str, List]:
         return self.training_history.copy()
     
@@ -197,17 +188,13 @@ class FederatedClient:
             'test_samples': len(self.test_dataset),
             'train_label_distribution': train_distribution,
             'test_label_distribution': test_distribution,
-            'is_malicious': self.is_malicious,
-            'attack_config': self.attack_config
         }
-    
+
     def save_model(self, filepath: str) -> None:
         torch.save({
             'client_id': self.client_id,
             'model_state_dict': self.model.state_dict(),
             'training_history': self.training_history,
-            'is_malicious': self.is_malicious,
-            'attack_config': self.attack_config
         }, filepath)
         
         self.logger.info(f"客户端 {self.client_id} 模型已保存到: {filepath}")
@@ -217,16 +204,13 @@ class FederatedClient:
         
         self.model.load_state_dict(checkpoint['model_state_dict'])
         self.training_history = checkpoint.get('training_history', self.training_history)
-        self.is_malicious = checkpoint.get('is_malicious', False)
-        self.attack_config = checkpoint.get('attack_config', None)
         
         self.logger.info(f"客户端 {self.client_id} 模型已从 {filepath} 加载")
     
     def __str__(self) -> str:
         return (f"FederatedClient(id={self.client_id}, "
                 f"train_samples={len(self.train_dataset)}, "
-                f"test_samples={len(self.test_dataset)}, "
-                f"malicious={self.is_malicious})")
+                f"test_samples={len(self.test_dataset)})")
     
     def __repr__(self) -> str:
         return self.__str__()

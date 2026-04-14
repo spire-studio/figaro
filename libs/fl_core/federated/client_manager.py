@@ -11,23 +11,14 @@ import time
 
 from .client import FederatedClient
 
-try:
-    from fl_core.attacks.data_poison import DataAttackManager
-    from fl_core.attacks.model_poison import ModelAttackManager
-    _HAS_ATTACKS = True
-except ImportError:
-    _HAS_ATTACKS = False
-
 from fl_core.compression.sparsification import GlobalTopKSparsifier
 from fl_core.privacy.encryption import CKKSManager
 
 
 class ClientManager:
     
-    def __init__(self, 
+    def __init__(self,
                  clients: List[FederatedClient],
-                 attack_config: Dict[str, Any],
-                 malicious_clients : List,
                  selection_strategy: str = "random",
                  max_workers: Optional[int] = None,
                  device: torch.device = None,
@@ -54,9 +45,6 @@ class ClientManager:
             raise ValueError(f"不支持的选择策略: {selection_strategy}. "
                            f"支持的策略: {self.supported_strategies}")
 
-        self.malicious_clients = malicious_clients
-        self.attack_config = attack_config
-
         self.sparsifier = sparsifier
         self.ckks_manager = ckks_manager
         
@@ -72,16 +60,6 @@ class ClientManager:
         else:
             self.training_stats['client_participation'] = {}
 
-        if _HAS_ATTACKS:
-            self.data_attacker = DataAttackManager(attack_config)
-            self.model_attacker = ModelAttackManager(attack_config)
-            if self.attack_config.get('enable', False):
-                self._apply_data_poisoning()
-        else:
-            self.data_attacker = None
-            self.model_attacker = None
-        
-        
         self.logger.info(f"客户端管理器初始化完成，客户端数量: {self.num_clients}, "
                         f"选择策略: {selection_strategy}, 最大并行数: {self.max_workers}")
     
@@ -89,29 +67,6 @@ class ClientManager:
             self.logger.info(f"稀疏化通信已启用 (Ratio: {self.sparsifier.ratio})")
         if self.ckks_manager:
             self.logger.info(f"CKKS同态加密通信已启用")
-    
-    def _apply_data_poisoning(self):
-        self.logger.info("正在执行异构数据投毒攻击...")
-        client_settings = self.attack_config.get('client_settings', {})
-        count = 0
-
-        for client in self.clients:
-            if client.client_id in self.malicious_clients:
-                # 获取该客户端专属配置
-                setting = client_settings.get(client.client_id, {})
-                if setting.get('attack_category') == 'data':
-                    original_data = client.train_data.detach().cpu().numpy()
-                    original_labels = client.train_labels.detach().cpu().numpy()
-                    
-                    poisoned_data, poisoned_labels = self.data_attacker.apply_data_poison_attack(
-                        client.client_id, original_data, original_labels,
-                        override_type=setting.get('attack_type'),
-                        override_params=setting.get('attack_params')
-                    )
-                    client.update_train_data(poisoned_data, poisoned_labels)
-                    count += 1
-
-        self.logger.info(f"异构投毒完成，已感染 {count} 个客户端")
     
     def set_client_weights(self, weights: List[float]) -> None:
         if len(weights) != self.num_clients:
@@ -395,26 +350,15 @@ class ClientManager:
         
         return evaluation_results
     
-    def get_client_models(self, selected_clients: List[FederatedClient], 
+    def get_client_models(self, selected_clients: List[FederatedClient],
                           global_model_params: Optional[Dict[str, torch.Tensor]] = None) -> List[Dict[str, torch.Tensor]]:
-        
+
         client_models = []
-        client_settings = self.attack_config.get('client_settings', {})
-        
+
         for client in selected_clients:
             try:
                 model_params = client.get_model_parameters()
-                setting = client_settings.get(client.client_id, {})
-                
-                if setting.get('attack_category') == 'model':
-                    self.logger.info(f"正在对客户端 {client.client_id} 执行模型投毒...")
-                    model_params = self.model_attacker.apply_model_poison_attack(
-                        client.client_id, model_params, 
-                        target_params=global_model_params,
-                        override_type=setting.get('attack_type'),
-                        override_params=setting.get('attack_params')
-                    )
-                
+
                 delta = {}
                 if global_model_params:
                     for k, v in model_params.items():
@@ -458,13 +402,12 @@ class ClientManager:
     def get_client_statistics(self) -> Dict[str, Any]:
         total_train_samples = sum(len(client.train_dataset) for client in self.clients)
         total_test_samples = sum(len(client.test_dataset) for client in self.clients)
-        malicious_clients = [client.client_id for client in self.clients if client.is_malicious]
-        
+
         participation_stats = self.training_stats['client_participation']
         avg_participation = np.mean(list(participation_stats.values())) if participation_stats else 0
         max_participation = max(participation_stats.values()) if participation_stats else 0
         min_participation = min(participation_stats.values()) if participation_stats else 0
-        
+
         return {
             'num_clients': self.num_clients,
             'selection_strategy': self.selection_strategy,
@@ -472,8 +415,6 @@ class ClientManager:
             'parallel_enabled': self.enable_parallel,
             'total_train_samples': total_train_samples,
             'total_test_samples': total_test_samples,
-            'malicious_clients': malicious_clients,
-            'num_malicious': len(malicious_clients),
             'training_stats': self.training_stats.copy(),
             'participation_stats': {
                 'average': avg_participation,

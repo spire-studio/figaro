@@ -41,9 +41,6 @@ class DistributedConfigService:
         expected_clients = cls.extract_expected_clients(normalized)
         cls._set_value_by_path(normalized, "federated.num_clients", expected_clients)
         cls._set_value_by_path(normalized, "dataset.num_clients", expected_clients)
-        cls._set_value_by_path(normalized, "attack.enable", False)
-        cls._set_value_by_path(normalized, "attack.malicious_clients", [])
-        cls._set_value_by_path(normalized, "defense.defense_params.num_malicious", 0)
         return normalized
 
 
@@ -76,7 +73,6 @@ class DistributedConfigService:
         server_port: int,
         expected_clients: int,
         assigned_participant_id: int,
-        is_malicious: bool,
     ) -> dict[str, Any]:
         """
         Build runtime config payload for distributed participant process.
@@ -90,12 +86,6 @@ class DistributedConfigService:
         cls._set_value_by_path(normalized, "distributed.client_id", assigned_participant_id)
         cls._set_value_by_path(normalized, "federated.num_clients", expected_clients)
         cls._set_value_by_path(normalized, "dataset.num_clients", expected_clients)
-        cls._set_value_by_path(normalized, "attack.enable", is_malicious)
-        cls._set_value_by_path(
-            normalized,
-            "attack.malicious_clients",
-            [assigned_participant_id] if is_malicious else [],
-        )
         return normalized
 
 

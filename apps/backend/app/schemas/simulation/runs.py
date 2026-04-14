@@ -82,8 +82,6 @@ class SimulationRunExperimentInfo(BaseModel):
 
     basic: dict[str, Any] = Field(default_factory=dict)
     federated: dict[str, Any] = Field(default_factory=dict)
-    attack: dict[str, Any] = Field(default_factory=dict)
-    defense: dict[str, Any] = Field(default_factory=dict)
     security: dict[str, Any] = Field(default_factory=dict)
 
 

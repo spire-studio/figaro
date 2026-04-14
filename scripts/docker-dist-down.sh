@@ -31,4 +31,4 @@ else
   docker compose "${COMPOSE_ARGS[@]}" down
 fi
 
-echo "[phoenix-dist] stopped"
+echo "[figaro-dist] stopped"

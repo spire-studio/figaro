@@ -58,13 +58,20 @@ class DatasetLoader:
 
         if dataset_name not in self.supported_datasets:
             raise ValueError(f"不支持的数据集: {dataset_name}. 支持的数据集: {self.supported_datasets}")
-        
-        print(f"正在加载数据集: {dataset_name}")
-        
+
+        already_cached = self.check_dataset_exists(dataset_name)
+        if already_cached:
+            print(f"DATASET_READY: {dataset_name} (cached at {self.data_dir})", flush=True)
+        else:
+            print(
+                f"DATASET_DOWNLOAD_START: {dataset_name} (first-time download, this may take several minutes)",
+                flush=True,
+            )
+
         config = self.dataset_configs[dataset_name]
         dataset_class = config["dataset_class"]
         transform = config["transform"]
-        
+
         try:
             # 加载训练集
             train_dataset = dataset_class(
@@ -73,7 +80,7 @@ class DatasetLoader:
                 download=True,
                 transform=transform
             )
-            
+
             # 加载测试集
             test_dataset = dataset_class(
                 root=self.data_dir,
@@ -81,10 +88,14 @@ class DatasetLoader:
                 download=True,
                 transform=transform
             )
+
+            if not already_cached:
+                print(f"DATASET_DOWNLOAD_DONE: {dataset_name}", flush=True)
             
-            print(f"数据集 {dataset_name} 加载成功")
-            print(f"训练集大小: {len(train_dataset)}")
-            print(f"测试集大小: {len(test_dataset)}")
+            print(
+                f"DATASET_LOADED: {dataset_name} train={len(train_dataset)} test={len(test_dataset)}",
+                flush=True,
+            )
             
             # 转换为numpy数组
             train_data, train_labels = self._dataset_to_numpy(train_dataset)

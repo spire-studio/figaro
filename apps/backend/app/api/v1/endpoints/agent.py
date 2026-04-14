@@ -1,5 +1,5 @@
 """
-Agent API endpoints for autonomous attack/defense optimization.
+Agent API endpoints for autonomous experiment optimization.
 """
 
 from __future__ import annotations
@@ -230,7 +230,7 @@ async def get_optimization_job(
     status_code=status.HTTP_202_ACCEPTED,
     summary="Start an asynchronous agent optimization task",
 )
-async def start_attack_defense_optimization(
+async def start_optimization(
     payload: AgentOptimizeRequest,
 ) -> AgentOptimizeProgressResponse:
     """
@@ -253,7 +253,7 @@ async def start_attack_defense_optimization(
     status_code=status.HTTP_200_OK,
     summary="Get live progress for an agent optimization task",
 )
-async def get_attack_defense_optimization_progress(task_id: str) -> AgentOptimizeProgressResponse:
+async def get_optimization_progress(task_id: str) -> AgentOptimizeProgressResponse:
     """
     Return the latest snapshot for one asynchronous optimization task.
     """
@@ -265,16 +265,16 @@ async def get_attack_defense_optimization_progress(task_id: str) -> AgentOptimiz
     "/optimize",
     response_model=AgentOptimizeResponse,
     status_code=status.HTTP_200_OK,
-    summary="Run agent-driven attack/defense optimization loop",
+    summary="Run agent-driven optimization loop",
 )
-async def optimize_attack_defense(
+async def optimize(
     payload: AgentOptimizeRequest,
     session: AsyncSessionDep,
 ) -> AgentOptimizeResponse:
     """
     Run a bounded optimization loop where the agent:
 
-    - proposes a configuration (with focus on attack/defense);
+    - proposes a configuration;
     - creates/updates a simulation job;
     - starts a run and waits for it to complete;
     - reads normalized metrics and updates its internal state;

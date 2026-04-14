@@ -31,7 +31,7 @@ class Logger:
             "client_results": {}
         }
 
-        override_name = os.environ.get("PHOENIX_RESULTS_FILE", "").strip()
+        override_name = os.environ.get("FIGARO_RESULTS_FILE", "").strip()
         if override_name:
             safe_name = Path(override_name).name
             if safe_name.endswith(".json"):
@@ -45,9 +45,9 @@ class Logger:
     
     def _setup_logger(self):
         # 可通过环境变量关闭文件日志（由上层 runtime 统一落盘）。
-        disable_file_log = os.environ.get("PHOENIX_DISABLE_FILE_LOG", "0") == "1"
+        disable_file_log = os.environ.get("FIGARO_DISABLE_FILE_LOG", "0") == "1"
         # 支持显式指定日志文件路径（相对路径基于 log_dir）。
-        override_log_file = os.environ.get("PHOENIX_LOG_FILE", "").strip()
+        override_log_file = os.environ.get("FIGARO_LOG_FILE", "").strip()
         log_filename: Path | None = None
         if not disable_file_log:
             if override_log_file:
@@ -57,9 +57,13 @@ class Logger:
                 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
                 log_filename = self.log_dir / f"training_{self.identity}_{timestamp}.log"
         
-        self.logger = logging.getLogger(f"Phoenix_{self.identity}")
+        self.logger = logging.getLogger(f"Figaro_{self.identity}")
         self.logger.setLevel(logging.INFO)
-        
+        # Do not propagate to the root logger — otherwise Python's lastResort
+        # handler re-emits every record as "INFO:Figaro_x:..." which duplicates
+        # every subprocess log line in the backend's captured stream.
+        self.logger.propagate = False
+
         # 防止重复添加 handler（在某些环境中多次初始化会导致日志翻倍）
         if self.logger.hasHandlers():
             self.logger.handlers.clear()
@@ -79,7 +83,7 @@ class Logger:
         if log_filename is not None:
             self.logger.info(f"日志文件路径: {log_filename}")
         else:
-            self.logger.info("日志文件写入已禁用（PHOENIX_DISABLE_FILE_LOG=1）")
+            self.logger.info("日志文件写入已禁用（FIGARO_DISABLE_FILE_LOG=1）")
     
     def set_experiment_info(self, experiment_info: Dict[str, Any]):
         self.training_results["experiment_info"] = experiment_info

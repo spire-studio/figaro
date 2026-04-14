@@ -11,7 +11,6 @@ export function DistributedClientPanel(props: DistributedPageProps) {
     busy,
     clientConnecting,
     clientConnectionMessage,
-    clientIsMalicious,
     clientName,
     clientServerApiBase,
     clientSessionId,
@@ -22,7 +21,6 @@ export function DistributedClientPanel(props: DistributedPageProps) {
     handleClientConnect,
     handleClientReady,
     notifyError,
-    setClientIsMalicious,
     setClientName,
     setClientServerApiBase,
     setClientSessionId,
@@ -52,14 +50,6 @@ export function DistributedClientPanel(props: DistributedPageProps) {
             <p className="mb-1 text-xs text-muted-foreground">Client Name</p>
             <Input value={clientName} onChange={(event) => setClientName(event.target.value)} placeholder="client-host-01" />
           </div>
-          <label className="md:col-span-2 flex items-center justify-between rounded-md border border-border/70 bg-muted/25 px-3 py-2 text-sm">
-            <span>Self-report as malicious client</span>
-            <input
-              type="checkbox"
-              checked={clientIsMalicious}
-              onChange={(event) => setClientIsMalicious(event.target.checked)}
-            />
-          </label>
         </div>
 
         <div className="flex flex-wrap gap-2">
@@ -88,9 +78,6 @@ export function DistributedClientPanel(props: DistributedPageProps) {
               </Badge>
               {connectedClientInfo.assigned_participant_id !== null && (
                 <span className="text-xs text-muted-foreground">participant_id={connectedClientInfo.assigned_participant_id}</span>
-              )}
-              {connectedClientInfo.assigned_participant_id !== null && connectedClientInfo.is_malicious && (
-                <Badge variant="danger">malicious</Badge>
               )}
             </div>
           )}

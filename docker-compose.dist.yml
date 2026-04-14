@@ -1,4 +1,4 @@
-name: phoenix-dist
+name: figaro-dist
 
 x-backend-base: &backend-base
   build:
@@ -30,7 +30,7 @@ x-backend-base: &backend-base
     https_proxy: ""
     NO_PROXY: localhost,127.0.0.1
     no_proxy: localhost,127.0.0.1
-    PROJECT_NAME: Phoenix
+    PROJECT_NAME: Figaro
     API_PREFIX: /api/v1
     POSTGRES_PORT: 5432
     POSTGRES_USER: ${POSTGRES_USER:-postgres}
@@ -44,7 +44,7 @@ x-backend-base: &backend-base
   gpus: all
   volumes:
     - ./:/workspace
-    - phoenix_dist_uv_cache:/root/.cache/uv
+    - figaro_dist_uv_cache:/root/.cache/uv
 
 x-frontend-base: &frontend-base
   image: node:20-bookworm
@@ -59,33 +59,33 @@ x-frontend-base: &frontend-base
     VITE_DISTRIBUTED_SERVER_API_BASE: http://127.0.0.1:${DIST_SERVER_API_PORT:-8100}
   volumes:
     - ./:/workspace
-    - phoenix_dist_pnpm_store:/root/.local/share/pnpm/store
+    - figaro_dist_pnpm_store:/root/.local/share/pnpm/store
   networks:
-    - phoenix-dist-net
+    - figaro-dist-net
 
 services:
   postgres-server:
     image: postgres:16
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${DIST_SERVER_POSTGRES_DB:-phoenix_server}
+      POSTGRES_DB: ${DIST_SERVER_POSTGRES_DB:-figaro_server}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
     ports:
       - "${DIST_SERVER_POSTGRES_HOST_PORT:-55431}:5432"
     volumes:
-      - phoenix_dist_pg_server:/var/lib/postgresql/data
+      - figaro_dist_pg_server:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${DIST_SERVER_POSTGRES_DB:-phoenix_server}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${DIST_SERVER_POSTGRES_DB:-figaro_server}"]
       interval: 5s
       timeout: 5s
       retries: 20
     networks:
-      - phoenix-dist-net
+      - figaro-dist-net
 
   backend-server:
     <<: *backend-base
-    container_name: phoenix-dist-backend-server
+    container_name: figaro-dist-backend-server
     network_mode: host
     command: >
       bash -lc "/opt/venv/bin/python -m uvicorn app.main:app
@@ -96,13 +96,13 @@ services:
     environment:
       ENVIRONMENT: development
       DEBUG: "true"
-      PROJECT_NAME: Phoenix
+      PROJECT_NAME: Figaro
       API_PREFIX: /api/v1
       FRONTEND_URL: http://localhost:${DIST_SERVER_WEB_PORT:-5273}
       ALLOWED_ORIGINS: http://localhost:${DIST_SERVER_WEB_PORT:-5273},http://127.0.0.1:${DIST_SERVER_WEB_PORT:-5273}
       POSTGRES_HOST: 127.0.0.1
       POSTGRES_PORT: ${DIST_SERVER_POSTGRES_HOST_PORT:-55431}
-      POSTGRES_DB: ${DIST_SERVER_POSTGRES_DB:-phoenix_server}
+      POSTGRES_DB: ${DIST_SERVER_POSTGRES_DB:-figaro_server}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_POOL_SIZE: "5"
@@ -117,7 +117,7 @@ services:
 
   frontend-server:
     <<: *frontend-base
-    container_name: phoenix-dist-frontend-server
+    container_name: figaro-dist-frontend-server
     environment:
       CHOKIDAR_USEPOLLING: "true"
       VITE_API_BASE_URL: http://127.0.0.1:${DIST_SERVER_API_PORT:-8100}
@@ -128,8 +128,8 @@ services:
       - "${DIST_SERVER_WEB_PORT:-5273}:5173"
     volumes:
       - ./:/workspace
-      - phoenix_dist_pnpm_store:/root/.local/share/pnpm/store
-      - phoenix_dist_frontend_server_node_modules:/workspace/apps/frontend/node_modules
+      - figaro_dist_pnpm_store:/root/.local/share/pnpm/store
+      - figaro_dist_frontend_server_node_modules:/workspace/apps/frontend/node_modules
     depends_on:
       - backend-server
 
@@ -137,24 +137,24 @@ services:
     image: postgres:16
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${DIST_CLIENT0_POSTGRES_DB:-phoenix_client0}
+      POSTGRES_DB: ${DIST_CLIENT0_POSTGRES_DB:-figaro_client0}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
     ports:
       - "${DIST_CLIENT0_POSTGRES_HOST_PORT:-55432}:5432"
     volumes:
-      - phoenix_dist_pg_client0:/var/lib/postgresql/data
+      - figaro_dist_pg_client0:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${DIST_CLIENT0_POSTGRES_DB:-phoenix_client0}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${DIST_CLIENT0_POSTGRES_DB:-figaro_client0}"]
       interval: 5s
       timeout: 5s
       retries: 20
     networks:
-      - phoenix-dist-net
+      - figaro-dist-net
 
   backend-client0:
     <<: *backend-base
-    container_name: phoenix-dist-backend-client0
+    container_name: figaro-dist-backend-client0
     network_mode: host
     command: >
       bash -lc "/opt/venv/bin/python -m uvicorn app.main:app
@@ -165,13 +165,13 @@ services:
     environment:
       ENVIRONMENT: development
       DEBUG: "true"
-      PROJECT_NAME: Phoenix
+      PROJECT_NAME: Figaro
       API_PREFIX: /api/v1
       FRONTEND_URL: http://localhost:${DIST_CLIENT0_WEB_PORT:-5274}
       ALLOWED_ORIGINS: http://localhost:${DIST_CLIENT0_WEB_PORT:-5274},http://127.0.0.1:${DIST_CLIENT0_WEB_PORT:-5274}
       POSTGRES_HOST: 127.0.0.1
       POSTGRES_PORT: ${DIST_CLIENT0_POSTGRES_HOST_PORT:-55432}
-      POSTGRES_DB: ${DIST_CLIENT0_POSTGRES_DB:-phoenix_client0}
+      POSTGRES_DB: ${DIST_CLIENT0_POSTGRES_DB:-figaro_client0}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_POOL_SIZE: "5"
@@ -186,7 +186,7 @@ services:
 
   frontend-client0:
     <<: *frontend-base
-    container_name: phoenix-dist-frontend-client0
+    container_name: figaro-dist-frontend-client0
     environment:
       CHOKIDAR_USEPOLLING: "true"
       VITE_API_BASE_URL: http://127.0.0.1:${DIST_CLIENT0_API_PORT:-8101}
@@ -197,8 +197,8 @@ services:
       - "${DIST_CLIENT0_WEB_PORT:-5274}:5173"
     volumes:
       - ./:/workspace
-      - phoenix_dist_pnpm_store:/root/.local/share/pnpm/store
-      - phoenix_dist_frontend_client0_node_modules:/workspace/apps/frontend/node_modules
+      - figaro_dist_pnpm_store:/root/.local/share/pnpm/store
+      - figaro_dist_frontend_client0_node_modules:/workspace/apps/frontend/node_modules
     depends_on:
       - backend-client0
 
@@ -206,24 +206,24 @@ services:
     image: postgres:16
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${DIST_CLIENT1_POSTGRES_DB:-phoenix_client1}
+      POSTGRES_DB: ${DIST_CLIENT1_POSTGRES_DB:-figaro_client1}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
     ports:
       - "${DIST_CLIENT1_POSTGRES_HOST_PORT:-55433}:5432"
     volumes:
-      - phoenix_dist_pg_client1:/var/lib/postgresql/data
+      - figaro_dist_pg_client1:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${DIST_CLIENT1_POSTGRES_DB:-phoenix_client1}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${DIST_CLIENT1_POSTGRES_DB:-figaro_client1}"]
       interval: 5s
       timeout: 5s
       retries: 20
     networks:
-      - phoenix-dist-net
+      - figaro-dist-net
 
   backend-client1:
     <<: *backend-base
-    container_name: phoenix-dist-backend-client1
+    container_name: figaro-dist-backend-client1
     network_mode: host
     command: >
       bash -lc "/opt/venv/bin/python -m uvicorn app.main:app
@@ -234,13 +234,13 @@ services:
     environment:
       ENVIRONMENT: development
       DEBUG: "true"
-      PROJECT_NAME: Phoenix
+      PROJECT_NAME: Figaro
       API_PREFIX: /api/v1
       FRONTEND_URL: http://localhost:${DIST_CLIENT1_WEB_PORT:-5275}
       ALLOWED_ORIGINS: http://localhost:${DIST_CLIENT1_WEB_PORT:-5275},http://127.0.0.1:${DIST_CLIENT1_WEB_PORT:-5275}
       POSTGRES_HOST: 127.0.0.1
       POSTGRES_PORT: ${DIST_CLIENT1_POSTGRES_HOST_PORT:-55433}
-      POSTGRES_DB: ${DIST_CLIENT1_POSTGRES_DB:-phoenix_client1}
+      POSTGRES_DB: ${DIST_CLIENT1_POSTGRES_DB:-figaro_client1}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_POOL_SIZE: "5"
@@ -255,7 +255,7 @@ services:
 
   frontend-client1:
     <<: *frontend-base
-    container_name: phoenix-dist-frontend-client1
+    container_name: figaro-dist-frontend-client1
     environment:
       CHOKIDAR_USEPOLLING: "true"
       VITE_API_BASE_URL: http://127.0.0.1:${DIST_CLIENT1_API_PORT:-8102}
@@ -266,20 +266,20 @@ services:
       - "${DIST_CLIENT1_WEB_PORT:-5275}:5173"
     volumes:
       - ./:/workspace
-      - phoenix_dist_pnpm_store:/root/.local/share/pnpm/store
-      - phoenix_dist_frontend_client1_node_modules:/workspace/apps/frontend/node_modules
+      - figaro_dist_pnpm_store:/root/.local/share/pnpm/store
+      - figaro_dist_frontend_client1_node_modules:/workspace/apps/frontend/node_modules
     depends_on:
       - backend-client1
 
 networks:
-  phoenix-dist-net:
+  figaro-dist-net:
 
 volumes:
-  phoenix_dist_uv_cache:
-  phoenix_dist_pnpm_store:
-  phoenix_dist_pg_server:
-  phoenix_dist_pg_client0:
-  phoenix_dist_pg_client1:
-  phoenix_dist_frontend_server_node_modules:
-  phoenix_dist_frontend_client0_node_modules:
-  phoenix_dist_frontend_client1_node_modules:
+  figaro_dist_uv_cache:
+  figaro_dist_pnpm_store:
+  figaro_dist_pg_server:
+  figaro_dist_pg_client0:
+  figaro_dist_pg_client1:
+  figaro_dist_frontend_server_node_modules:
+  figaro_dist_frontend_client0_node_modules:
+  figaro_dist_frontend_client1_node_modules:

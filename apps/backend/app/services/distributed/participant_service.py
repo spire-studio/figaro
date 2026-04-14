@@ -71,11 +71,9 @@ class DistributedParticipantService:
             participant_name=participant_name,
         )
         metadata = metadata_json or {}
-        is_malicious = bool(metadata.get("is_malicious")) if isinstance(metadata, dict) else False
 
         if latest and latest.status not in self.session_service.REUSABLE_PARTICIPANT_STATUSES:
             latest.metadata_json = metadata
-            latest.is_malicious = is_malicious
             latest.last_seen_at = utcnow()
             await self.session_service.participant_repository.update_participant(latest)
             await self.session_service.session.commit()
@@ -87,8 +85,6 @@ class DistributedParticipantService:
             participant_name=participant_name,
             metadata_json=metadata,
         )
-        participant.is_malicious = is_malicious
-        await self.session_service.participant_repository.update_participant(participant)
         await self.session_service.session.commit()
         await self.session_service.session.refresh(participant)
         await self.session_service._refresh_session_status(distributed_session)

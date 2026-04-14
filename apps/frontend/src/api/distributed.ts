@@ -29,7 +29,6 @@ export type DistributedClient = {
   session_id: string;
   participant_name: string;
   assigned_participant_id: number | null;
-  is_malicious: boolean;
   status: "pending_approval" | "approved" | "ready" | "running" | "rejected" | "cancelled" | "disconnected";
   metadata_json: Record<string, unknown>;
   requested_at: string;

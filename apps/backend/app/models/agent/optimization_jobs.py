@@ -54,7 +54,7 @@ class AgentOptimizationJob(SQLModel, table=True):
     )
     current_phase: str | None = Field(
         default=None,
-        sa_column=Column(String(64), nullable=True),
+        sa_column=Column(String(255), nullable=True),
     )
     max_iterations: int = Field(
         default=0,
