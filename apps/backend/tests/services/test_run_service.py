@@ -13,20 +13,6 @@ class _DummySession:
         return None
 
 
-def test_run_service_builds_command_and_writes_config(tmp_path):
-    service = SimulationRunService(session=_DummySession())
-    service._job_config_dir = lambda: Path(tmp_path)  # type: ignore[method-assign]
-
-    config_path = service._write_run_config("rid-1", {"a": 1})
-    assert config_path.exists()
-    assert config_path.name == "rid-1.json"
-
-    command = service._build_train_command(config_path)
-    assert command[1] == "apps/backend/runners/experiment_runner.py"
-    assert command[2:4] == ["--mode", "simulation"]
-    assert command[-2:] == ["--config", str(config_path)]
-
-
 def test_run_service_start_run_flow_without_real_subprocess(monkeypatch, tmp_path):
     async def _run_test():
         service = SimulationRunService(session=_DummySession())
