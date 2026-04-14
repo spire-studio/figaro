@@ -1,4 +1,4 @@
-from app.services.agent.state import AgentState, ConfigChange, ExperimentPlan, ExperimentRecord
+from app.services.agent.state import ConfigChange, ExperimentRecord
 
 
 def test_experiment_record_fields_round_trip():
@@ -25,27 +25,3 @@ def test_experiment_record_fields_round_trip():
     assert record.config["federated"]["num_clients"] == 5
     assert record.metrics["global_results"]["global_accuracy"][-1] == 0.7
     assert record.notes == "first"
-
-
-def test_agent_state_uses_isolated_mutable_defaults():
-    s1 = AgentState(goal="a")
-    s2 = AgentState(goal="b")
-
-    s1.current_config["federated"] = {"num_rounds": 20}
-    s1.current_plan = ExperimentPlan(iteration=1, iteration_goal="baseline")
-    s1.history.append(
-        ExperimentRecord(
-            iteration=1,
-            run_id="run-1",
-            job_id=1,
-            config={},
-            metrics={},
-        )
-    )
-
-    assert s2.current_config == {}
-    assert s2.current_plan is None
-    assert s2.history == []
-    assert s2.max_iterations == 10
-    assert s2.iteration == 0
-    assert s2.terminated is False

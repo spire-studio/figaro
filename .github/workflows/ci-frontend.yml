@@ -1,0 +1,47 @@
+name: ci-frontend
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/frontend/**"
+      - ".github/workflows/ci-frontend.yml"
+  pull_request:
+    paths:
+      - "apps/frontend/**"
+      - ".github/workflows/ci-frontend.yml"
+
+concurrency:
+  group: ci-frontend-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: apps/frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.13.1
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: apps/frontend/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Type check
+        run: pnpm exec tsc -b --noEmit
+
+      - name: Build
+        run: pnpm build
