@@ -39,7 +39,7 @@ export function DistributedClientPanel(props: DistributedPageProps) {
             <Input
               value={clientServerApiBase}
               onChange={(event) => setClientServerApiBase(event.target.value)}
-              placeholder="http://127.0.0.1:8000"
+              placeholder="http://localhost:8000"
             />
           </div>
           <div>

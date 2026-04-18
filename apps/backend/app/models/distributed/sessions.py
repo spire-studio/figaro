@@ -37,7 +37,7 @@ class DistributedSession(SQLModel, table=True):
         sa_column=Column(Integer, ForeignKey("distributed_jobs.id"), nullable=False, index=True),
     )
     server_ip: str = Field(
-        default="127.0.0.1",
+        default="localhost",
         sa_column=Column(String(DistributedLimits.SERVER_IP_MAX_LENGTH), nullable=False),
     )
     server_port: int = Field(

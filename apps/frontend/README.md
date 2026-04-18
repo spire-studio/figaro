@@ -23,7 +23,7 @@ This updates `src/api/openapi.d.ts` from FastAPI OpenAPI schema.
 pnpm run dev
 ```
 
-Frontend uses `VITE_API_BASE_URL` (default: `http://127.0.0.1:8000`).
+Frontend uses `VITE_API_BASE_URL` (default: `http://localhost:8000`).
 
 ## Pages/Features
 

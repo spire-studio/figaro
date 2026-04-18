@@ -23,7 +23,7 @@ def test_distributed_session_lifecycle(client):
 
     created_session = client.post(
         f"/api/v1/distributed/jobs/{job_id}/session",
-        json={"server_ip": "127.0.0.1", "server_port": 50052},
+        json={"server_ip": "localhost", "server_port": 50052},
     )
     assert created_session.status_code == 201
     session_id = created_session.json()["id"]
@@ -102,7 +102,7 @@ def test_distributed_start_requires_all_clients_ready(client):
 
     created_session = client.post(
         f"/api/v1/distributed/jobs/{job_id}/session",
-        json={"server_ip": "127.0.0.1", "server_port": 50052},
+        json={"server_ip": "localhost", "server_port": 50052},
     )
     assert created_session.status_code == 201
     session_id = created_session.json()["id"]

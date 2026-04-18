@@ -56,6 +56,14 @@ class LLMRegistry:
             "name": "gpt-4o",
             "llm": _build_openai_model("gpt-4o"),
         },
+        {
+            "name": "bytedance-seed/seed-2.0-mini",
+            "llm": _build_openai_model("bytedance-seed/seed-2.0-mini"),
+        }, 
+        {
+            "name": "moonshotai/kimi-k2.5",
+            "llm": _build_openai_model("moonshotai/kimi-k2.5"),
+        }
     ]
 
     @classmethod

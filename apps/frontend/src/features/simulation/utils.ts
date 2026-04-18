@@ -98,7 +98,7 @@ const CLIENT_SERIES_COLORS = [
 ];
 
 export const DEFAULT_DISTRIBUTED_SERVER_API_BASE = import.meta.env.VITE_DISTRIBUTED_SERVER_API_BASE ?? baseUrl;
-export const DEFAULT_DISTRIBUTED_GRPC_HOST = import.meta.env.VITE_DISTRIBUTED_GRPC_HOST ?? "127.0.0.1";
+export const DEFAULT_DISTRIBUTED_GRPC_HOST = import.meta.env.VITE_DISTRIBUTED_GRPC_HOST ?? "localhost";
 export const DEFAULT_DISTRIBUTED_GRPC_PORT = import.meta.env.VITE_DISTRIBUTED_GRPC_PORT ?? "50052";
 
 export function nodeCenter(node: TopologyNode): Point {

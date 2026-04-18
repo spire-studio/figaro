@@ -32,3 +32,5 @@ configs/simulation_runs/
 configs/agent_experiment_runs/
 configs/agent_config_*.yaml
 configs/cached/
+
+.pnpm-store/

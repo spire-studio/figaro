@@ -19,7 +19,7 @@ def _build_request(path: str = "/test") -> Request:
         "raw_path": path.encode("utf-8"),
         "query_string": b"",
         "headers": [],
-        "client": ("127.0.0.1", 12345),
+        "client": ("localhost", 12345),
         "server": ("testserver", 80),
     }
     return Request(scope)

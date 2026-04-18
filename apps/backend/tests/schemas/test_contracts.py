@@ -33,7 +33,7 @@ def test_basic_request_schema_defaults():
     sim_cfg = SimulationJobConfigUpdateRequest(config={"x": 1})
     sim_copy = SimulationJobCopyRequest()
 
-    assert dist_session.server_ip == "127.0.0.1"
+    assert dist_session.server_ip == "localhost"
     assert dist_session.server_port == 50052
     assert dist_cfg.config == {}
     assert message.detail is None
@@ -64,7 +64,7 @@ def test_from_attributes_response_models_round_trip():
     dist_session = DistributedSession(
         id="sess0001",
         job_id=2,
-        server_ip="127.0.0.1",
+        server_ip="localhost",
         server_port=50052,
     )
 

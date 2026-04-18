@@ -18,9 +18,9 @@ echo "[figaro-dev] starting postgres + backend + frontend..."
 
 echo
 echo "[figaro-dev] started"
-echo "  Frontend: http://127.0.0.1:5173"
-echo "  Backend : http://127.0.0.1:8000"
-echo "  API Docs: http://127.0.0.1:8000/docs"
+echo "  Frontend: http://localhost:5173"
+echo "  Backend : http://localhost:8000"
+echo "  API Docs: http://localhost:8000/docs"
 echo
 echo "Logs:"
 echo "  docker compose -f ${COMPOSE_FILE} logs -f --tail=200"

@@ -17,7 +17,7 @@ class DistributedSessionCreateRequest(BaseModel):
     Request payload for creating or getting distributed session.
     """
 
-    server_ip: str = "127.0.0.1"
+    server_ip: str = "localhost"
     server_port: int = 50052
 
 

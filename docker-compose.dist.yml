@@ -28,8 +28,8 @@ x-backend-base: &backend-base
     http_proxy: ""
     HTTPS_PROXY: ""
     https_proxy: ""
-    NO_PROXY: localhost,127.0.0.1
-    no_proxy: localhost,127.0.0.1
+    NO_PROXY: localhost,localhost
+    no_proxy: localhost,localhost
     PROJECT_NAME: Figaro
     API_PREFIX: /api/v1
     POSTGRES_PORT: 5432
@@ -56,7 +56,7 @@ x-frontend-base: &frontend-base
     && pnpm dev --host 0.0.0.0 --port 5173"
   environment:
     CHOKIDAR_USEPOLLING: "true"
-    VITE_DISTRIBUTED_SERVER_API_BASE: http://127.0.0.1:${DIST_SERVER_API_PORT:-8100}
+    VITE_DISTRIBUTED_SERVER_API_BASE: http://localhost:${DIST_SERVER_API_PORT:-8100}
   volumes:
     - ./:/workspace
     - figaro_dist_pnpm_store:/root/.local/share/pnpm/store
@@ -99,8 +99,8 @@ services:
       PROJECT_NAME: Figaro
       API_PREFIX: /api/v1
       FRONTEND_URL: http://localhost:${DIST_SERVER_WEB_PORT:-5273}
-      ALLOWED_ORIGINS: http://localhost:${DIST_SERVER_WEB_PORT:-5273},http://127.0.0.1:${DIST_SERVER_WEB_PORT:-5273}
-      POSTGRES_HOST: 127.0.0.1
+      ALLOWED_ORIGINS: http://localhost:${DIST_SERVER_WEB_PORT:-5273},http://localhost:${DIST_SERVER_WEB_PORT:-5273}
+      POSTGRES_HOST: localhost
       POSTGRES_PORT: ${DIST_SERVER_POSTGRES_HOST_PORT:-55431}
       POSTGRES_DB: ${DIST_SERVER_POSTGRES_DB:-figaro_server}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
@@ -120,9 +120,9 @@ services:
     container_name: figaro-dist-frontend-server
     environment:
       CHOKIDAR_USEPOLLING: "true"
-      VITE_API_BASE_URL: http://127.0.0.1:${DIST_SERVER_API_PORT:-8100}
-      VITE_DISTRIBUTED_SERVER_API_BASE: http://127.0.0.1:${DIST_SERVER_API_PORT:-8100}
-      VITE_DISTRIBUTED_GRPC_HOST: 127.0.0.1
+      VITE_API_BASE_URL: http://localhost:${DIST_SERVER_API_PORT:-8100}
+      VITE_DISTRIBUTED_SERVER_API_BASE: http://localhost:${DIST_SERVER_API_PORT:-8100}
+      VITE_DISTRIBUTED_GRPC_HOST: localhost
       VITE_DISTRIBUTED_GRPC_PORT: "50052"
     ports:
       - "${DIST_SERVER_WEB_PORT:-5273}:5173"
@@ -168,8 +168,8 @@ services:
       PROJECT_NAME: Figaro
       API_PREFIX: /api/v1
       FRONTEND_URL: http://localhost:${DIST_CLIENT0_WEB_PORT:-5274}
-      ALLOWED_ORIGINS: http://localhost:${DIST_CLIENT0_WEB_PORT:-5274},http://127.0.0.1:${DIST_CLIENT0_WEB_PORT:-5274}
-      POSTGRES_HOST: 127.0.0.1
+      ALLOWED_ORIGINS: http://localhost:${DIST_CLIENT0_WEB_PORT:-5274},http://localhost:${DIST_CLIENT0_WEB_PORT:-5274}
+      POSTGRES_HOST: localhost
       POSTGRES_PORT: ${DIST_CLIENT0_POSTGRES_HOST_PORT:-55432}
       POSTGRES_DB: ${DIST_CLIENT0_POSTGRES_DB:-figaro_client0}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
@@ -189,9 +189,9 @@ services:
     container_name: figaro-dist-frontend-client0
     environment:
       CHOKIDAR_USEPOLLING: "true"
-      VITE_API_BASE_URL: http://127.0.0.1:${DIST_CLIENT0_API_PORT:-8101}
-      VITE_DISTRIBUTED_SERVER_API_BASE: http://127.0.0.1:${DIST_SERVER_API_PORT:-8100}
-      VITE_DISTRIBUTED_GRPC_HOST: 127.0.0.1
+      VITE_API_BASE_URL: http://localhost:${DIST_CLIENT0_API_PORT:-8101}
+      VITE_DISTRIBUTED_SERVER_API_BASE: http://localhost:${DIST_SERVER_API_PORT:-8100}
+      VITE_DISTRIBUTED_GRPC_HOST: localhost
       VITE_DISTRIBUTED_GRPC_PORT: "50052"
     ports:
       - "${DIST_CLIENT0_WEB_PORT:-5274}:5173"
@@ -237,8 +237,8 @@ services:
       PROJECT_NAME: Figaro
       API_PREFIX: /api/v1
       FRONTEND_URL: http://localhost:${DIST_CLIENT1_WEB_PORT:-5275}
-      ALLOWED_ORIGINS: http://localhost:${DIST_CLIENT1_WEB_PORT:-5275},http://127.0.0.1:${DIST_CLIENT1_WEB_PORT:-5275}
-      POSTGRES_HOST: 127.0.0.1
+      ALLOWED_ORIGINS: http://localhost:${DIST_CLIENT1_WEB_PORT:-5275},http://localhost:${DIST_CLIENT1_WEB_PORT:-5275}
+      POSTGRES_HOST: localhost
       POSTGRES_PORT: ${DIST_CLIENT1_POSTGRES_HOST_PORT:-55433}
       POSTGRES_DB: ${DIST_CLIENT1_POSTGRES_DB:-figaro_client1}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
@@ -258,9 +258,9 @@ services:
     container_name: figaro-dist-frontend-client1
     environment:
       CHOKIDAR_USEPOLLING: "true"
-      VITE_API_BASE_URL: http://127.0.0.1:${DIST_CLIENT1_API_PORT:-8102}
-      VITE_DISTRIBUTED_SERVER_API_BASE: http://127.0.0.1:${DIST_SERVER_API_PORT:-8100}
-      VITE_DISTRIBUTED_GRPC_HOST: 127.0.0.1
+      VITE_API_BASE_URL: http://localhost:${DIST_CLIENT1_API_PORT:-8102}
+      VITE_DISTRIBUTED_SERVER_API_BASE: http://localhost:${DIST_SERVER_API_PORT:-8100}
+      VITE_DISTRIBUTED_GRPC_HOST: localhost
       VITE_DISTRIBUTED_GRPC_PORT: "50052"
     ports:
       - "${DIST_CLIENT1_WEB_PORT:-5275}:5173"

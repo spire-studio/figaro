@@ -10,7 +10,7 @@ def _base_settings_kwargs() -> dict:
         "PROJECT_NAME": "Figaro",
         "API_PREFIX": "/api/v1",
         "FRONTEND_URL": "http://localhost:5173",
-        "ALLOWED_ORIGINS": "http://localhost:5173, http://127.0.0.1:5173",
+        "ALLOWED_ORIGINS": "http://localhost:5173, http://localhost:5173",
         "POSTGRES_HOST": "localhost",
         "POSTGRES_PORT": 5432,
         "POSTGRES_DB": "figaro",

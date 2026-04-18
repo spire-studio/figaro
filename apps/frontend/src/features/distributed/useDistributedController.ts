@@ -417,7 +417,7 @@ export function useDistributedController({
       : {};
     const configuredIp = String(getValueByPath(jobConfig, "distributed.server_ip") ?? "").trim();
     const nextIp =
-      configuredIp.length > 0 && configuredIp !== "127.0.0.1" && configuredIp !== "localhost"
+      configuredIp.length > 0 && configuredIp !== "localhost" && configuredIp !== "localhost"
         ? configuredIp
         : DEFAULT_DISTRIBUTED_GRPC_HOST;
     const configuredPort = String(getValueByPath(jobConfig, "distributed.port") ?? "").trim();

@@ -46,7 +46,7 @@ def test_distributed_models_have_expected_defaults():
     assert job.status == DistributedJobStatus.DRAFT
     assert job.expected_clients == 1
     assert session.status == DistributedSessionStatus.WAITING_CLIENTS
-    assert session.server_ip == "127.0.0.1"
+    assert session.server_ip == "localhost"
     assert session.server_port == 50052
     assert len(session.id) == 8
     assert participant.status == DistributedParticipantStatus.PENDING_APPROVAL
