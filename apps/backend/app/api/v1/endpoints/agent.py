@@ -4,7 +4,8 @@ Agent API endpoints for autonomous experiment optimization.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, status, HTTPException
+import json
 
 from app.api.deps import AsyncSessionDep
 from app.schemas.agent import (
@@ -27,6 +28,8 @@ from app.services.agent import AgentExperimentRunService, AgentExperimentService
 from app.services.agent.graph import FederatedAgentGraphBuilder
 from app.services.agent.objectives import AgentOptimizationObjective, resolve_objective
 from app.services.llm import LLMRegistry, LLMService
+from app.schemas.agent import AgentPlanPreviewRequest, AgentPlanPreviewResponse, ExperimentPlanPreview, AgentPlanReviseRequest
+import uuid
 
 agent_router = APIRouter()
 agent_runtime_service = AgentRuntimeService()
@@ -143,6 +146,7 @@ def _build_progress_response(snapshot: dict) -> AgentOptimizeProgressResponse:
         best_config=snapshot.get("best_config"),
         best_metrics=best_metrics,
         experiments=_build_experiments(snapshot.get("experiments", [])),
+        draft_experiments=snapshot.get("draft_experiments", []),
         summary_text=snapshot.get("summary_text"),
         error_message=snapshot.get("error_message"),
         created_at=snapshot.get("created_at"),
@@ -243,6 +247,7 @@ async def start_optimization(
         system_mode=payload.system_mode,
         model_name=payload.model_name,
         objective=payload.objective,
+        planned_experiments=payload.planned_experiments,
     )
     return _build_progress_response(snapshot)
 
@@ -463,3 +468,145 @@ async def get_agent_run_logs(
         )
         for log in logs
     ]
+
+
+@agent_router.post(
+    "/optimize/plan",
+    response_model=AgentPlanPreviewResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Generate a plan preview and save as draft",
+)
+async def generate_plan_preview(
+    payload: AgentPlanPreviewRequest,
+    session: AsyncSessionDep,
+) -> AgentPlanPreviewResponse:
+    """
+    1. Call LLM to generate the plan.
+    2. Create a Job record with PENDING_REVIEW status.
+    """
+    # Borrow the graph builder to do the LLM parsing
+    llm_service = LLMService()
+    builder = FederatedAgentGraphBuilder(llm_service=llm_service, session=session)
+    
+    # Construct a dummy initial state to run through the parse node
+    temp_state = AgentState(
+        goal=payload.goal,
+        job_name=payload.job_name,
+        model_name=payload.model_name,
+        system_mode=payload.system_mode,
+        max_iterations=10, 
+        objective=AgentOptimizationObjective.AUTO,
+        resolved_objective=AgentOptimizationObjective.ACCURACY,
+    )
+    
+    # Call the graph's parse node directly to get the LLM result
+    parsed_state = await builder._node_parse(temp_state)
+    
+    previews = []
+    for exp in parsed_state.experiments:
+        previews.append(ExperimentPlanPreview(
+            name=exp.name,
+            plan_summary=exp.plan_summary or "",
+            config_patch=exp.config_patch,
+            # Fallback values if LLM doesn't generate them
+            estimated_minutes=0, 
+            estimated_gpu_vram_gb=0.0,
+        ))
+
+    # Persist the draft (write snapshot to DB, set status to pending_review)
+    history_service = AgentOptimizationHistoryService(session)
+    
+    job = await history_service.create_job(
+        task_id=f"draft-{uuid.uuid4().hex[:8]}",
+        goal=payload.goal,
+        job_name=payload.job_name,
+        model_name=payload.model_name,
+        system_mode=payload.system_mode,
+        max_iterations=len(previews) or 1,
+        status="pending_review",
+        snapshot={
+            "goal": payload.goal,
+            "job_name": payload.job_name,
+            "status": "pending_review",
+            "experiments": [],
+            "draft_experiments": [p.model_dump() for p in previews]
+        }
+    )
+
+    return AgentPlanPreviewResponse(
+        optimization_job_id=job.id,
+        goal=payload.goal,
+        experiments=previews,
+        system_mode=payload.system_mode
+    )
+
+@agent_router.post(
+    "/optimization-jobs/{job_id}/revise",
+    response_model=AgentPlanPreviewResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Revise a pending plan draft using natural language",
+)
+async def revise_plan_preview(
+    job_id: int,
+    payload: AgentPlanReviseRequest,
+    session: AsyncSessionDep,
+) -> AgentPlanPreviewResponse:
+    history_service = AgentOptimizationHistoryService(session)
+    job = await history_service.get_job_or_raise(job_id)
+    
+    current_status = job.status.value if hasattr(job.status, "value") else str(job.status)
+    if current_status != "pending_review":
+        raise HTTPException(status_code=400, detail="Only pending_review jobs can be revised.")
+
+    snapshot = job.snapshot_json
+    current_experiments = snapshot.get("draft_experiments", [])
+    if not current_experiments:
+        raise HTTPException(status_code=400, detail="No draft experiments found to revise.")
+
+    instructions = (
+        "You are an AI assistant managing a Federated Learning experiment plan. "
+        "The user wants to modify the current experiment configuration based on their feedback. "
+        "Update the JSON configuration to reflect their request. "
+        "Respond ONLY with a valid JSON array of experiment objects, matching the original schema. "
+        "Do not include any other text."
+    )
+    
+    input_text = (
+        f"Current Plan (JSON):\n{json.dumps(current_experiments, indent=2)}\n\n"
+        f"User Modification Request:\n{payload.instruction}\n\n"
+        "Please output the updated JSON array of experiments:"
+    )
+
+    llm_service = LLMService()
+    model_name = snapshot.get("model_name") 
+    text, _ = await llm_service.generate_text(
+        model=model_name if model_name else None,
+        instructions=instructions,
+        input_text=input_text,
+    )
+
+    clean_text = text.strip()
+    if clean_text.startswith("```json"):
+        clean_text = clean_text[7:]
+    elif clean_text.startswith("```"):
+        clean_text = clean_text[3:]
+    if clean_text.endswith("```"):
+        clean_text = clean_text[:-3]
+    clean_text = clean_text.strip()
+
+    try:
+        updated_experiments = json.loads(clean_text)
+        if not isinstance(updated_experiments, list):
+            raise ValueError("LLM did not return a list.")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to parse LLM response: {str(e)}")
+
+    snapshot["draft_experiments"] = updated_experiments
+    await history_service.update_job_snapshot(task_id=job.task_id, snapshot=snapshot)
+
+    return AgentPlanPreviewResponse(
+        optimization_job_id=job.id,
+        goal=snapshot.get("goal", ""),
+        experiments=[ExperimentPlanPreview.model_validate(exp) for exp in updated_experiments],
+        system_mode=snapshot.get("system_mode", "simulation")
+    )

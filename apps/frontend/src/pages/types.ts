@@ -30,6 +30,14 @@ export type NodeRole = "server" | "client";
 export type SystemMode = "simulation" | "distributed";
 export type BadgeVariant = "default" | "secondary" | "outline" | "success" | "warning" | "danger";
 
+export type AgentWorkflowStep = "home" | "preview" | "running" | "results";
+
+export type AgentPlanDraft = {
+  job_id: number;
+  goal: string;
+  experiments: any[];
+};
+
 export type Point = {
   x: number;
   y: number;
@@ -251,6 +259,13 @@ export type AgentPageProps = {
   setMaxIterations: Dispatch<SetStateAction<number>>;
   setModelName: Dispatch<SetStateAction<string>>;
   setObjective: Dispatch<SetStateAction<AgentOptimizationObjective>>;
+  workflowStep: AgentWorkflowStep;
+  setWorkflowStep: Dispatch<SetStateAction<AgentWorkflowStep>>;
+  draftPlan: AgentPlanDraft | null;
+  setDraftPlan: Dispatch<SetStateAction<AgentPlanDraft | null>>;
+  handleGeneratePlan: () => Promise<void>;
+  handleExecutePlan: (editedExperiments: any[]) => Promise<void>;
+  optimizationJobs?: any[];
 };
 
 export type { RunMetrics };

@@ -137,3 +137,23 @@ def build_lessons_learned(
 ) -> list[str]:
     """Bench mode does not generate iterative lessons."""
     return []
+
+def calculate_communication_cost(config: dict[str, Any]) -> int:
+    """Estimate communication cost: total rounds * clients per round."""
+    federated = config.get("federated") or {}
+    rounds = int(federated.get("num_rounds", 0))
+    clients = int(federated.get("clients_per_round", 0))
+    return rounds * clients
+
+def calculate_computation_cost(config: dict[str, Any]) -> int:
+    """Estimate computation cost: total rounds * clients per round * local epochs."""
+    federated = config.get("federated") or {}
+    epochs = int(federated.get("local_epochs", 0))
+    return calculate_communication_cost(config) * epochs
+
+def get_best_experiment(state: AgentState) -> ExperimentRecord | None:
+    """Find the best performing experiment (the Winner)."""
+    scored = [r for r in state.experiment_results if r.score is not None]
+    if not scored:
+        return None
+    return max(scored, key=lambda r: r.score)

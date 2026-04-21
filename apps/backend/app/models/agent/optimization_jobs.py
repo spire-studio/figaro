@@ -21,6 +21,7 @@ class AgentOptimizationJobStatus(str, Enum):
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+    PENDING_REVIEW = "pending_review"
 
 
 class AgentOptimizationJob(SQLModel, table=True):

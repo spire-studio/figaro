@@ -10,7 +10,7 @@ import {
   type AgentOptimizeResponse,
   type AgentRunResponse,
 } from "../../api/agent";
-import type { AgentPageProps } from "../../pages/types";
+import type { AgentPageProps, AgentWorkflowStep, AgentPlanDraft } from "../../pages/types";
 import { toErrorMessage } from "../simulation/utils";
 
 const DEFAULT_GOAL = "Compare CIFAR-10 non-IID with alpha=0.1, 0.3, 0.5";
@@ -68,6 +68,8 @@ function toHistorySummary(progress: AgentOptimizeProgressResponse): AgentOptimiz
 }
 
 export function useAgentController(): AgentPageProps {
+  const [workflowStep, setWorkflowStep] = useState<AgentWorkflowStep>("home");
+  const [draftPlan, setDraftPlan] = useState<AgentPlanDraft | null>(null);
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [goal, setGoal] = useState(DEFAULT_GOAL);
@@ -136,8 +138,86 @@ export function useAgentController(): AgentPageProps {
 
   async function selectHistoryJob(optimizationJobId: number): Promise<void> {
     setSelectedHistoryJobId(optimizationJobId);
-    const detail = await agentApi.getOptimizationJob(optimizationJobId);
-    setSelectedHistory(detail);
+    try {
+      const detail = await agentApi.getOptimizationJob(optimizationJobId);
+      setSelectedHistory(detail);
+
+      if (detail.status === "pending_review" && detail.draft_experiments?.length) {
+        setDraftPlan({
+          job_id: detail.optimization_job_id,
+          goal: detail.goal,
+          experiments: detail.draft_experiments
+        });
+        setWorkflowStep("preview");
+      } else if (detail.status === "completed") {
+        setResult(toFinalResult(detail));
+      }
+    } catch (error) {
+      notifyError(error, "agent-history-detail");
+    }
+  }
+  
+  async function handleGeneratePlan(): Promise<void> {
+    const trimmedGoal = goal.trim();
+    if (!trimmedGoal) {
+      toast.warning("Please describe your experiment.");
+      return;
+    }
+    const trimmedJobName = jobName.trim();
+    if (!trimmedJobName) {
+      toast.warning("Please provide a job name.");
+      return;
+    }
+  
+    setBusy(true);
+    try {
+      const data = await agentApi.generatePlan({
+        goal: trimmedGoal,
+        job_name: trimmedJobName,
+        model_name: modelName.trim().length > 0 ? modelName.trim() : null,
+        system_mode: "simulation",
+      });
+  
+      setDraftPlan({
+        job_id: data.optimization_job_id,
+        goal: data.goal,
+        experiments: data.experiments,
+      });
+      
+      setWorkflowStep("preview");
+      void refreshHistoryJobs(); // Refresh sidebar to show PENDING_REVIEW job
+    } catch (error) {
+      notifyError(error, "agent-plan");
+    } finally {
+      setBusy(false);
+    }
+  }
+  
+  async function handleExecutePlan(editedExperiments: any[]): Promise<void> {
+    if (!draftPlan) return;
+    
+    setBusy(true);
+    setResult(null);
+    setProgress(null);
+    
+    try {
+      const data = await agentApi.startOptimizeFromDraft({
+        goal: draftPlan.goal,
+        job_name: jobName,
+        max_iterations: editedExperiments.length,
+        system_mode: "simulation",
+        model_name: modelName.trim().length > 0 ? modelName.trim() : null,
+        objective: objective,
+        planned_experiments: editedExperiments, // Bypass LLM parse in backend
+      });
+      
+      setProgress(data);
+      setActiveTaskId(data.task_id);
+      setWorkflowStep("running");
+    } catch (error) {
+      notifyError(error, "agent-execute");
+      setBusy(false);
+    }
   }
 
   async function handleOptimize(): Promise<void> {
@@ -253,6 +333,7 @@ export function useAgentController(): AgentPageProps {
             setResult(toFinalResult(nextProgress));
             setBusy(false);
             setActiveTaskId(null);
+            setWorkflowStep("results");
             void refreshHistoryJobs().catch((error: unknown) => notifyError(error, "agent-history-refresh"));
             void refreshExperiments().catch((error: unknown) => notifyError(error, "agent-experiments-refresh"));
             toast.success("Experiment run finished.");
@@ -318,5 +399,11 @@ export function useAgentController(): AgentPageProps {
     setMaxIterations,
     setModelName,
     setObjective,
+    workflowStep,
+    setWorkflowStep,
+    draftPlan,
+    setDraftPlan,
+    handleGeneratePlan,
+    handleExecutePlan,
   };
 }

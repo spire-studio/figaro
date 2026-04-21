@@ -39,6 +39,7 @@ class AgentRuntimeService:
         model_name: str | None,
         job_name: str | None,
         objective: AgentOptimizationObjective,
+        planned_experiments: list[dict[str, Any]],
     ) -> dict[str, Any]:
         """
         Create a background experiment task and return its initial snapshot.
@@ -98,6 +99,7 @@ class AgentRuntimeService:
                     job_name=job_name,
                     objective=objective,
                     resolved_objective=resolved_objective,
+                    planned_experiments=planned_experiments,
                 )
             )
             task.add_done_callback(lambda finished_task, current_task_id=task_id: self._on_task_done(current_task_id, finished_task))
@@ -124,6 +126,7 @@ class AgentRuntimeService:
         job_name: str | None,
         objective: AgentOptimizationObjective,
         resolved_objective: AgentOptimizationObjective,
+        planned_experiments: list[dict[str, Any]] | None = None,
     ) -> None:
         """Execute one experiment task in the background."""
         logger.info("agent_task_started task_id=%s", task_id)
@@ -138,6 +141,7 @@ class AgentRuntimeService:
                 objective=objective,
                 resolved_objective=resolved_objective,
                 phase="parsing",
+                planned_experiments=planned_experiments,
             )
             await self._update_from_state(task_id, initial_state, status="running")
             async with AsyncSessionLocal() as session:

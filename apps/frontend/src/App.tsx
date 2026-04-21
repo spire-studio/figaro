@@ -1,57 +1,73 @@
-import { useState } from "react";
-import { BriefcaseBusiness, Loader2 } from "lucide-react";
-
+import { BriefcaseBusiness, Sparkles, LayoutDashboard, LineChart } from "lucide-react";
 import { Card, CardContent } from "./components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "./components/ui/tabs";
+
 import { useAgentController } from "./features/agent/useAgentController";
-import { useDistributedController } from "./features/distributed/useDistributedController";
-import { useSimulationController } from "./features/simulation/useSimulationController";
-import { AgentPage } from "./pages/AgentPage";
-import { DistributedPage } from "./pages/DistributedPage";
-import { SimulationPage } from "./pages/SimulationPage";
-import type { PageMode } from "./pages/types";
+import { AgentExperimentStudio } from "./features/agent/components/AgentExperimentStudio";
+import { AgentPlanPreview } from "./features/agent/components/AgentPlanPreview";
+import { AgentRunDashboard } from "./features/agent/components/AgentRunDashboard";
+import { AgentResultsCompare } from "./features/agent/components/AgentResultsCompare";
 
 export default function App() {
-  const [pageMode, setPageMode] = useState<PageMode>("agent");
-  const simulationPageProps = useSimulationController();
-  const agentPageProps = useAgentController();
-  const distributedPageProps = useDistributedController({
-    pageMode,
-    configSchema: simulationPageProps.configSchema,
-  });
-  const busy = simulationPageProps.busy || distributedPageProps.busy || agentPageProps.busy;
+  const agentProps = useAgentController();
+  const { workflowStep, setWorkflowStep, draftPlan } = agentProps;
+
+  const activeTab = 
+    (workflowStep === "home" || workflowStep === "preview") ? "studio" :
+    (workflowStep === "running") ? "dashboard" : 
+    "results";
+
+  const handleTabChange = (val: string) => {
+    if (val === "studio") {
+      setWorkflowStep(draftPlan ? "preview" : "home");
+    } else if (val === "dashboard") {
+      setWorkflowStep("running");
+    } else if (val === "results") {
+      setWorkflowStep("results");
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <div className="mx-auto w-full max-w-[1600px] space-y-4 p-4 md:p-6">
-        <Card>
+    <div className="min-h-screen bg-background text-foreground flex flex-col">
+      <div className="mx-auto w-full max-w-[1600px] space-y-4 p-4 md:p-6 flex-1 flex flex-col h-screen overflow-hidden">
+        
+        {/* 顶层全局导航栏 */}
+        <Card className="shrink-0 border-primary/20 shadow-sm bg-card/50 backdrop-blur">
           <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4">
             <div className="flex items-center gap-2">
-              <BriefcaseBusiness className="h-5 w-5" />
-              <h1 className="text-lg font-semibold tracking-tight">Figaro Control Center</h1>
+              <div className="p-1.5 bg-primary/10 rounded-md">
+                <BriefcaseBusiness className="h-5 w-5 text-primary" />
+              </div>
+              <h1 className="text-xl font-bold tracking-tight bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
+                Figaro Agent Studio
+              </h1>
             </div>
+            
             <div className="flex items-center gap-2">
-              <Tabs value={pageMode} onValueChange={(value) => setPageMode(value as PageMode)}>
-                <TabsList>
-                  <TabsTrigger value="agent">Agent</TabsTrigger>
-                  <TabsTrigger value="simulation">Simulation</TabsTrigger>
-                  <TabsTrigger value="distributed">Distributed</TabsTrigger>
+              <Tabs value={activeTab} onValueChange={handleTabChange}>
+                <TabsList className="grid w-[500px] grid-cols-3">
+                  <TabsTrigger value="studio" className="flex gap-2">
+                    <Sparkles className="h-4 w-4" /> Experiment Studio
+                  </TabsTrigger>
+                  <TabsTrigger value="dashboard" className="flex gap-2">
+                    <LayoutDashboard className="h-4 w-4" /> Run Dashboard
+                  </TabsTrigger>
+                  <TabsTrigger value="results" className="flex gap-2">
+                    <LineChart className="h-4 w-4" /> Results & History
+                  </TabsTrigger>
                 </TabsList>
               </Tabs>
             </div>
           </CardContent>
         </Card>
 
-        {pageMode === "simulation" && <SimulationPage {...simulationPageProps} busy={busy} />}
-        {pageMode === "distributed" && <DistributedPage {...distributedPageProps} busy={busy} />}
-        {pageMode === "agent" && <AgentPage {...agentPageProps} />}
-
-        {busy && (
-          <div className="fixed bottom-4 right-4 inline-flex items-center gap-2 rounded-md border bg-card px-3 py-2 text-xs text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Processing...
-          </div>
-        )}
+        {/* 动态内容渲染区 */}
+        <div className="flex-1 min-h-0 overflow-hidden">
+          {activeTab === "studio" && workflowStep === "home" && <AgentExperimentStudio {...agentProps} />}
+          {activeTab === "studio" && workflowStep === "preview" && <AgentPlanPreview {...agentProps} />}
+          {activeTab === "dashboard" && <AgentRunDashboard {...agentProps} />}
+          {activeTab === "results" && <AgentResultsCompare {...agentProps} />}
+        </div>
       </div>
     </div>
   );

@@ -33,6 +33,10 @@ from app.models.agent import (
 )
 from app.repositories.agent import AgentExperimentRepository
 
+from app.core.logger import get_logger
+
+logger = get_logger(__name__)
+
 
 # ---------------------------------------------------------------------------
 # Shared constants (mirrored from simulation run_service / run_metrics_service)
@@ -472,11 +476,9 @@ class AgentExperimentRunService:
         run = await self.repo.get_run(run_id)
         if not run:
             raise exceptions.RunNotFound("Run not found")
-
         # If terminal and already has metrics, return them
         if run.status in TERMINAL_RUN_STATUSES and isinstance(run.metrics_json, dict) and run.metrics_json:
             return self._normalize_metrics_payload(run.metrics_json)
-
         # Try live result file
         live_result_path = self._results_dir() / self._build_live_results_filename(run_id)
         loaded = self._load_metrics_file(live_result_path)

@@ -37,9 +37,15 @@ class AgentOptimizationHistoryService:
         model_name: str | None,
         max_iterations: int,
         snapshot: dict[str, Any],
+        status: AgentOptimizationJobStatus | str = AgentOptimizationJobStatus.QUEUED,
     ) -> AgentOptimizationJob:
         if job_name:
             await self._ensure_unique_job_name(job_name)
+
+        resolved_status = status
+        if isinstance(status, str):
+            resolved_status = AgentOptimizationJobStatus(status.lower())
+
         try:
             job = await self.repository.create_job(
                 task_id=task_id,
@@ -47,7 +53,7 @@ class AgentOptimizationHistoryService:
                 goal=goal,
                 system_mode=system_mode,
                 model_name=model_name,
-                status=AgentOptimizationJobStatus.QUEUED,
+                status=resolved_status,
                 max_iterations=max_iterations,
                 snapshot_json=self._to_json_safe(snapshot),
             )
@@ -120,8 +126,12 @@ class AgentOptimizationHistoryService:
     async def _ensure_unique_job_name(self, job_name: str, *, exclude_job_id: int | None = None) -> None:
         existing = await self.repository.get_job_by_name(job_name)
         if existing and (exclude_job_id is None or existing.id != exclude_job_id):
-            raise exceptions.JobAlreadyExists(self.JOB_NAME_CONFLICT_MESSAGE)
-
+            current_status = existing.status.value if hasattr(existing.status, "value") else str(existing.status)
+            if current_status.lower() == "pending_review":
+                await self.session.delete(existing)
+                await self.session.flush()
+            else:
+                raise exceptions.JobAlreadyExists(self.JOB_NAME_CONFLICT_MESSAGE)
     @staticmethod
     def _extract_simulation_job_id(snapshot: dict[str, Any]) -> int | None:
         current_experiment = snapshot.get("current_experiment")

@@ -41,6 +41,10 @@ class AgentOptimizeRequest(BaseModel):
         default=AgentOptimizationObjective.AUTO,
         description="Objective for the experiment batch. 'accuracy' maximizes accuracy; 'auto' defaults to accuracy.",
     )
+    planned_experiments: Optional[list[dict[str, Any]]] = Field(
+        default=None, 
+        description="Explicit list of experiment patches to run, bypassing LLM parse."
+    )
 
 
 class AgentModelsResponse(BaseModel):
@@ -143,6 +147,7 @@ class AgentOptimizeProgressResponse(BaseModel):
     best_config: dict[str, Any] | None = None
     best_metrics: SimulationRunMetricsResponse | None = None
     experiments: list[AgentExperimentSummary] = Field(default_factory=list)
+    draft_experiments: list[dict[str, Any]] = Field(default_factory=list)
     summary_text: str | None = None
     error_message: str | None = None
     created_at: datetime | None = None
@@ -215,3 +220,31 @@ class AgentRunMetricsResponse(BaseModel):
 
     run_id: str
     metrics: dict[str, Any] = Field(default_factory=dict)
+
+
+class ExperimentPlanPreview(BaseModel):
+    """Single experiment draft for frontend UI display and editing."""
+    name: str
+    plan_summary: str
+    config_patch: dict[str, Any]
+    estimated_minutes: int = Field(default=0, description="Estimated time in minutes")
+    estimated_gpu_vram_gb: float = Field(default=0.0, description="Estimated VRAM in GB")
+    risk_warnings: list[str] = Field(default_factory=list)
+
+class AgentPlanPreviewRequest(BaseModel):
+    """Payload for requesting a draft generation without execution."""
+    goal: str = Field(..., description="Natural-language experiment request.")
+    job_name: str = Field(..., description="Name for the job group.")
+    model_name: Optional[str] = None
+    system_mode: str = "simulation"
+
+class AgentPlanPreviewResponse(BaseModel):
+    """Draft results returned to the frontend."""
+    optimization_job_id: int
+    goal: str
+    experiments: list[ExperimentPlanPreview]
+    system_mode: str
+
+class AgentPlanReviseRequest(BaseModel):
+    """Payload for requesting a revision to an existing plan draft."""
+    instruction: str = Field(..., description="Natural language feedback to revise the plan.")

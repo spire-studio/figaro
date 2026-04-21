@@ -13,6 +13,9 @@ import time
 import uuid
 from collections.abc import Awaitable, Callable
 
+from app.core.logger import get_logger
+logger = get_logger(__name__)
+
 from langgraph.graph import END, StateGraph  # type: ignore[import-untyped]
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -71,6 +74,25 @@ class FederatedAgentGraphBuilder:
         state.phase = "parsing"
         await self._publish_progress(state)
 
+        if getattr(state, "planned_experiments", None):
+            experiments: list[ExperimentPlan] = []
+            for idx, exp in enumerate(state.planned_experiments):
+                name = exp.get("name", f"exp-{idx + 1}")
+                experiments.append(
+                    ExperimentPlan(
+                        iteration=idx + 1,
+                        iteration_goal=f"Run experiment: {name}",
+                        name=name,
+                        plan_summary=exp.get("plan_summary", ""),
+                        config_patch=exp.get("config_patch", {}),
+                    )
+                )
+            state.experiments = experiments
+            state.max_iterations = len(experiments)
+            state.phase = "parsed"
+            await self._publish_progress(state)
+            return state
+
         experiment_service = AgentExperimentService(self._session)
         schema = experiment_service.get_config_schema()
         capabilities = get_platform_capabilities()
@@ -83,16 +105,30 @@ class FederatedAgentGraphBuilder:
             base_config=base_config,
         )
 
+        logger.info("llm input instructions=%s", instructions)
+        logger.info("llm input prompt=%s", prompt)
+
         text, _ = await self._llm.generate_text(
             model=select_llm_model(state.model_name),
             instructions=instructions,
             input_text=prompt,
         )
 
+        logger.info("llm raw output=%s", text)
+
+        clean_text = text.strip()
+        if clean_text.startswith("```json"):
+            clean_text = clean_text[7:]
+        elif clean_text.startswith("```"):
+            clean_text = clean_text[3:]
+        if clean_text.endswith("```"):
+            clean_text = clean_text[:-3]
+        clean_text = clean_text.strip()
+
         # Parse LLM response into experiment plans
         experiments: list[ExperimentPlan] = []
         try:
-            parsed = json.loads(text)
+            parsed = json.loads(clean_text)
             if isinstance(parsed, dict):
                 plan_summary = parsed.get("plan_summary", "")
                 raw_experiments = parsed.get("experiments", [])
@@ -101,14 +137,16 @@ class FederatedAgentGraphBuilder:
                         if not isinstance(exp, dict):
                             continue
                         name = exp.get("name", f"exp-{idx + 1}")
-                        config = exp.get("config", {})
-                        if not isinstance(config, dict):
-                            config = {}
+                        patch_config = exp.get("config", {})
+                        if not isinstance(patch_config, dict):
+                            patch_config = {}
                         # Merge with base config and normalize
-                        merged = self._deep_merge_dicts(base_config, config)
+                        current_full_config = copy.deepcopy(base_config)
+                        merged = self._deep_merge_dicts(current_full_config, patch_config)
                         try:
                             normalized = experiment_service.normalize_simulation_config(merged)
-                        except exceptions.BadRequestError:
+                        except Exception:
+                            # 如果合并出错，至少保证能跑，回退到基础配置
                             normalized = experiment_service.normalize_simulation_config(
                                 copy.deepcopy(base_config)
                             )
@@ -118,7 +156,7 @@ class FederatedAgentGraphBuilder:
                                 iteration_goal=f"Run experiment: {name}",
                                 name=name,
                                 plan_summary=plan_summary,
-                                config_patch=config,
+                                config_patch=normalized, 
                             )
                         )
         except (json.JSONDecodeError, Exception):

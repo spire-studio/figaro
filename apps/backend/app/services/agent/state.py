@@ -102,3 +102,5 @@ class AgentState:
     history: list[ExperimentRecord] = field(default_factory=list)
     terminated: bool = False
     summary: str | None = None
+
+    planned_experiments: list[dict[str, Any]] | None = None

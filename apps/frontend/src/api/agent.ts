@@ -90,6 +90,7 @@ export type AgentOptimizeProgressResponse = {
   best_config: Record<string, unknown> | null;
   best_metrics: RunMetrics | null;
   experiments: AgentExperimentSummary[];
+  draft_experiments?: any[];
   summary_text: string | null;
   error_message: string | null;
   created_at: string | null;
@@ -151,6 +152,33 @@ export type AgentRunLogResponse = {
   level: string;
   message: string;
   created_at: string;
+};
+
+export interface ExperimentPlanPreview {
+  name: string;
+  plan_summary: string;
+  config_patch: Record<string, unknown>;
+  estimated_minutes?: number;
+  estimated_gpu_vram_gb?: number;
+  risk_warnings?: string[];
+};
+
+export interface AgentPlanPreviewRequest {
+  goal: string;
+  job_name: string;
+  model_name: string | null;
+  system_mode: string;
+};
+
+export interface AgentPlanPreviewResponse {
+  optimization_job_id: number;
+  goal: string;
+  experiments: ExperimentPlanPreview[];
+  system_mode: string;
+};
+
+export interface AgentPlanReviseRequest {
+  instruction: string;
 };
 
 async function readJson<T>(response: Response): Promise<T> {
@@ -234,5 +262,36 @@ export const agentApi = {
   async getRunLogs(runId: string): Promise<AgentRunLogResponse[]> {
     const response = await fetch(`${baseUrl}/api/v1/agent/runs/${encodeURIComponent(runId)}/logs`);
     return readJson<AgentRunLogResponse[]>(response);
+  },
+
+  async generatePlan(request: AgentPlanPreviewRequest): Promise<AgentPlanPreviewResponse> {
+    const response = await fetch(`${baseUrl}/api/v1/agent/optimize/plan`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    });
+    return readJson<AgentPlanPreviewResponse>(response);
+  },
+
+  async startOptimizeFromDraft(request: any): Promise<any> {
+    const response = await fetch(`${baseUrl}/api/v1/agent/optimize/start`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    });
+    return readJson<any>(response);
+  },
+
+  async revisePlan(jobId: number, request: AgentPlanReviseRequest): Promise<AgentPlanPreviewResponse> {
+    const response = await fetch(`${baseUrl}/api/v1/agent/optimization-jobs/${encodeURIComponent(jobId)}/revise`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.detail || "Failed to revise plan");
+    }
+    return response.json();
   },
 };
