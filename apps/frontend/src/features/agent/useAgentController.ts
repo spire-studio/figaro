@@ -144,7 +144,7 @@ export function useAgentController(): AgentPageProps {
 
       if (detail.status === "pending_review" && detail.draft_experiments?.length) {
         setDraftPlan({
-          job_id: detail.optimization_job_id,
+          job_id: detail.optimization_job_id!,
           goal: detail.goal,
           experiments: detail.draft_experiments
         });
@@ -179,7 +179,7 @@ export function useAgentController(): AgentPageProps {
       });
   
       setDraftPlan({
-        job_id: data.optimization_job_id,
+        job_id: data.optimization_job_id!,
         goal: data.goal,
         experiments: data.experiments,
       });

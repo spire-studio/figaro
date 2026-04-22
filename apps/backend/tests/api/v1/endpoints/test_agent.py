@@ -155,12 +155,14 @@ def test_agent_optimize_endpoint_handles_dict_result(client, monkeypatch):
 def test_agent_optimize_start_endpoint_returns_live_progress(client, monkeypatch):
     import app.api.v1.endpoints.agent as agent_module
 
-    async def _fake_start_optimization(*, goal, max_iterations, system_mode, model_name, job_name, objective):
+    # ADD `planned_experiments` here 👇
+    async def _fake_start_optimization(*, goal, max_iterations, system_mode, model_name, job_name, objective, planned_experiments):
         assert goal == "live optimize"
         assert max_iterations == 3
         assert system_mode == "simulation"
         assert model_name == "gpt-live"
         assert job_name == "opt-job-live"
+        assert planned_experiments is None # Optional: verify the default value is passed
         return {
             "task_id": "task-1",
             "status": "running",

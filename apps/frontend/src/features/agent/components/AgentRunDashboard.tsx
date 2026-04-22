@@ -19,7 +19,7 @@ const CHART_COLORS = [
   "#06b6d4"  // Cyan
 ];
 
-export function AgentRunDashboard({ progress, runLogs }: AgentPageProps) {
+export function AgentRunDashboard({ progress }: AgentPageProps) {
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [liveMetrics, setLiveMetrics] = useState<any>(null);
 
@@ -134,7 +134,7 @@ export function AgentRunDashboard({ progress, runLogs }: AgentPageProps) {
               >
                 <div className="flex flex-col min-w-0">
                   <span className={`font-semibold truncate ${isSelected ? 'text-primary' : 'text-foreground'}`}>
-                    {exp.name || `Exp ${idx + 1}`}
+                    {`Exp ${idx + 1}`}
                   </span>
                   {exp.score != null && <span className="text-[10px] text-muted-foreground mt-0.5">Acc: {(exp.score * 100).toFixed(2)}%</span>}
                 </div>
@@ -180,7 +180,7 @@ export function AgentRunDashboard({ progress, runLogs }: AgentPageProps) {
         <div className="mb-4">
           <h3 className="text-lg font-bold tracking-tight flex items-center gap-2">
             <Activity className="h-5 w-5 text-primary" /> 
-            Live Metrics <span className="text-muted-foreground text-sm font-normal">({activeExpMetadata?.name || "Initializing..."})</span>
+            Live Metrics <span className="text-muted-foreground text-sm font-normal">({"Initializing..."})</span>
           </h3>
         </div>
 
@@ -278,26 +278,6 @@ export function AgentRunDashboard({ progress, runLogs }: AgentPageProps) {
             )}
           </CardContent>
         </Card>
-
-        {/* <Card className="flex-1 min-h-[250px] flex flex-col">
-          <CardHeader className="pb-2 pt-4 px-4">
-            <CardTitle className="text-sm flex items-center gap-2">
-              <TerminalSquare className="h-4 w-4 text-muted-foreground" /> System Logs
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="flex-1 overflow-auto px-4 pb-4">
-            <div className="h-full overflow-auto rounded bg-black/5 dark:bg-black/40 p-2 font-mono text-[10px] leading-relaxed">
-              {runLogs?.map((log: any, i: number) => (
-                <div key={i} className="flex gap-2 border-b border-muted/20 py-1 last:border-none">
-                  <span className="text-muted-foreground whitespace-nowrap">{fmt(log.created_at)}</span>
-                  <span className={log.level === "ERROR" ? "text-red-400" : "text-cyan-600 dark:text-cyan-400"}>{log.level}</span>
-                  <span className="break-all">{log.message}</span>
-                </div>
-              ))}
-              {(!runLogs || runLogs.length === 0) && <p className="text-muted-foreground italic">Establishing stream...</p>}
-            </div>
-          </CardContent>
-        </Card> */}
       </div>
       
     </div>
