@@ -11,7 +11,7 @@ export function AgentExperimentStudio(props: AgentPageProps) {
   return (
     <div className="flex h-full w-full flex-col items-center justify-center space-y-6 max-w-3xl mx-auto py-12">
       <div className="text-center space-y-2">
-        <h1 className="text-3xl font-bold tracking-tight">Figaro Experiment Studio</h1>
+        <h1 className="text-3xl font-bold tracking-tight">Figaro Studio</h1>
         <p className="text-muted-foreground">Describe your federated learning goals. The agent will design the configuration.</p>
       </div>
 

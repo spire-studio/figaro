@@ -72,9 +72,9 @@ async def init_db() -> None:
     async with engine.begin() as conn:
         # In dev mode we hard-reset postgres schema so renamed tables/types are
         # fully cleaned up (including legacy enum dependencies).
-        if conn.dialect.name == "postgresql":
-            await conn.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
-            await conn.execute(text("CREATE SCHEMA public"))
-        else:
-            await conn.run_sync(SQLModel.metadata.drop_all)
+        # if conn.dialect.name == "postgresql":
+        #     await conn.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
+        #     await conn.execute(text("CREATE SCHEMA public"))
+        # else:
+        #     await conn.run_sync(SQLModel.metadata.drop_all)
         await conn.run_sync(SQLModel.metadata.create_all)

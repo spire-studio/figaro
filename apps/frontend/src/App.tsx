@@ -47,7 +47,7 @@ export default function App() {
               <Tabs value={activeTab} onValueChange={handleTabChange}>
                 <TabsList className="grid w-[500px] grid-cols-3">
                   <TabsTrigger value="studio" className="flex gap-2">
-                    <Sparkles className="h-4 w-4" /> Experiment Studio
+                    <Sparkles className="h-4 w-4" /> Agent Studio
                   </TabsTrigger>
                   <TabsTrigger value="dashboard" className="flex gap-2">
                     <LayoutDashboard className="h-4 w-4" /> Run Dashboard

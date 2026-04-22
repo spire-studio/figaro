@@ -92,6 +92,11 @@
 git clone https://github.com/spire-studio/figaro.git
 cd figaro
 uv sync
+
+cp .env.example .env
+# Edit .env and set:
+#   OPENAI_API_KEY=your-api-key
+#   POSTGRES_PASSWORD=postgres
 ```
 
 ## 🚀 Quick Start
@@ -110,15 +115,7 @@ docker run -d --name figaro-pg -p 5433:5432 \
   -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=figaro postgres:16
 ```
 
-**Step 2 — Configure `.env`**:
-```bash
-cp .env.example .env
-# Edit .env and set:
-#   OPENAI_API_KEY=your-api-key
-#   POSTGRES_PASSWORD=postgres
-```
-
-**Step 3 — Backend**:
+**Step 2 — Backend**:
 ```bash
 POSTGRES_HOST=localhost POSTGRES_PORT=5433 POSTGRES_PASSWORD=postgres POSTGRES_DB=figaro \
   PYTHONPATH=libs:apps/backend/runners \
@@ -130,7 +127,7 @@ To use a specific GPU (e.g. GPU 1):
 CUDA_VISIBLE_DEVICES=1 POSTGRES_HOST=localhost ... uv run uvicorn ...
 ```
 
-**Step 4 — Frontend** (in another terminal):
+**Step 3 — Frontend** (in another terminal):
 ```bash
 cd apps/frontend && pnpm install && pnpm dev
 ```
@@ -207,14 +204,27 @@ figaro/
 
 PRs welcome! Figaro is meant to be a readable, research-friendly FL platform.
 
-**Roadmap** — tentative, contributions welcome:
+**Roadmap**:
 
-- [ ] **Richer agent planning** — multi-step reflection and failure recovery in the LangGraph pipeline
-- [ ] **More aggregation strategies** — FedProx, FedAvgM, Scaffold on top of the existing FedAvg baseline
-- [ ] **Hardened distributed mode** — fault tolerance, client reconnection, and heterogeneous workers
-- [ ] **Expanded datasets & models** — beyond CIFAR-10 / MNIST and CNN / ResNet
-- [ ] **End-to-end reproducibility** — deterministic seeds, artifact lineage, and one-click replay
-- [ ] **Observability** — per-run metrics dashboard and structured logs
+**Phase 1: Solidifying the Agentic Platform**
+- [x] **Interactive Agent Planning** — Multi-turn dialogue support for refining experiments, plus visual topology previews (Plan Preview) before execution.
+- [x] **Execution Transparency** — Real-time tracking of node-level status during execution and automated natural-language interpretation of results.
+- [ ] **Strict Configuration Engine** — Implement strict Pydantic/JSON Schema validation to resolve historical inconsistencies between `config_schema` and underlying algorithms.
+- [ ] **Advanced Experiment Tracking** — Multi-dimensional search filtering (by metrics, hyperparameters, status) and configuration version control (diffing).
+
+**Phase 2: LLM & LoRA Federated Fine-Tuning**
+- [ ] **Native LLM Ecosystem Integration** — Seamless Hugging Face model loading (e.g., Llama 3, Qwen) and efficient parsing of JSONL instruction-tuning datasets.
+- [ ] **Parameter-Efficient Runtime** — Deep integration with LoRA/PEFT, including support for QLoRA (4-bit/8-bit quantization) to lower client-side memory barriers.
+- [ ] **Specialized Adapter Aggregation** — Custom aggregation mechanisms for LoRA adapters, exploring support for heterogeneous LoRA ranks across clients.
+- [ ] **LLM Evaluation Metrics** — Built-in evaluation for generative tasks (Rouge, BLEU, Perplexity) and automated LLM-as-a-Judge capabilities.
+- [ ] **Hardware Guardrails** — Pre-run dynamic GPU memory estimation (OOM prevention) and automated tuning of gradient accumulation and checkpointing.
+
+**Phase 3: Enterprise & Team Collaboration**
+- [ ] **Multi-Tenant Workspaces** — Isolated project environments with Role-Based Access Control (RBAC) and comprehensive audit logging.
+- [ ] **Robust Distributed Scheduling** — Global GPU resource queuing, quota management, and enhanced fault tolerance for client reconnections/dropouts.
+- [ ] **Cloud-Native Infrastructure** — Native Kubernetes (K8s) Runner integration with auto-scaling workers based on queue volume.
+- [ ] **Model Asset Registry** — Centralized Artifact Registry to track complete data lineage from dataset versions to final aggregated weights.
+- [ ] **Compliance & Governance** — Automated privacy compliance reporting (e.g., auditing Differential Privacy parameters) to ensure enterprise-grade security.
 
 <p align="center">
   <sub>Figaro is for research and educational use.</sub>

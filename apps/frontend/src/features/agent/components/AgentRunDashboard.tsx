@@ -6,6 +6,8 @@ import { MiniLineChart } from "../../simulation/components/MiniLineChart";
 import { fmt } from "../../../lib/time";
 import type { AgentPageProps } from "../../../pages/types";
 import { baseUrl } from "../../../../src/api/client";
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 const CHART_COLORS = [
   "hsl(var(--primary))", 
@@ -141,17 +143,34 @@ export function AgentRunDashboard({ progress, runLogs }: AgentPageProps) {
             );
           })}
 
-          {progress.status === "running" && currentPlan && currentExp?.run_id && (
+          {progress.status === "running" && 
+           progress.completed_iterations < progress.max_iterations && 
+           currentPlan && 
+           currentExp?.run_id && 
+           !experiments.some((e: any) => e.run_id === currentExp.run_id) && (
             <div 
               onClick={() => setSelectedRunId(currentExp.run_id)}
               className={`p-2.5 rounded-md border cursor-pointer transition-colors
                 ${activeRunId === currentExp.run_id ? 'bg-primary/10 border-primary shadow-sm' : 'bg-card border-primary/40 hover:bg-muted'}`}
             >
               <div className="flex items-center justify-between mb-1">
-                <span className="text-xs font-bold text-primary truncate">Running: {currentPlan.name}</span>
+                <span className="text-xs font-bold text-primary truncate">Running: </span>
                 <CircleDashed className="h-3.5 w-3.5 text-primary animate-spin shrink-0 ml-2" />
               </div>
               <div className="text-[10px] text-muted-foreground truncate">Round {currentExp.iteration} ...</div>
+            </div>
+          )}
+
+          {progress.status === "running" && 
+           progress.completed_iterations >= progress.max_iterations && (
+            <div className="p-2.5 rounded-md border bg-primary/5 border-primary/50 shadow-sm transition-colors cursor-default">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-bold text-primary truncate">Generating Agent Summary</span>
+                <CircleDashed className="h-3.5 w-3.5 text-primary animate-spin shrink-0 ml-2" />
+              </div>
+              <div className="text-[10px] text-muted-foreground truncate flex items-center gap-1">
+                <Bot className="h-3 w-3" /> Analyzing metrics & drafting report...
+              </div>
             </div>
           )}
         </CardContent>
@@ -209,8 +228,29 @@ export function AgentRunDashboard({ progress, runLogs }: AgentPageProps) {
             {progress.status === "completed" ? (
               <div>
                 <p className="font-bold mb-2 uppercase tracking-wider text-[10px] text-muted-foreground">Final Summary</p>
-                <div className="text-foreground/90 whitespace-pre-wrap leading-relaxed">
-                  {progress.summary_text || "The agent is finalizing the comparison report..."}
+                <div className="text-foreground/90 text-sm leading-relaxed max-w-none">
+                  {progress.summary_text ? (
+                    <ReactMarkdown 
+                      remarkPlugins={[remarkGfm]}
+                      components={{
+                        // 自定义 Markdown 元素的 Tailwind 样式
+                        p: ({node, ...props}) => <p className="mb-3 last:mb-0" {...props} />,
+                        ul: ({node, ...props}) => <ul className="list-disc pl-5 mb-3 space-y-1" {...props} />,
+                        strong: ({node, ...props}) => <strong className="font-semibold text-foreground" {...props} />,
+                        table: ({node, ...props}) => (
+                          <div className="my-4 w-full overflow-y-auto">
+                            <table className="w-full text-left border-collapse text-xs" {...props} />
+                          </div>
+                        ),
+                        th: ({node, ...props}) => <th className="border-b bg-muted/50 px-3 py-2 font-medium" {...props} />,
+                        td: ({node, ...props}) => <td className="border-b px-3 py-2 text-muted-foreground" {...props} />,
+                      }}
+                    >
+                      {progress.summary_text}
+                    </ReactMarkdown>
+                  ) : (
+                    "The agent is finalizing the comparison report..."
+                  )}
                 </div>
               </div>
             ) : (

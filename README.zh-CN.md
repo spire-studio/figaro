@@ -93,6 +93,11 @@
 git clone https://github.com/spire-studio/figaro.git
 cd figaro
 uv sync
+
+cp .env.example .env
+# 编辑 .env，设置：
+#   OPENAI_API_KEY=your-api-key
+#   POSTGRES_PASSWORD=postgres
 ```
 
 ## 🚀 快速开始
@@ -111,15 +116,7 @@ docker run -d --name figaro-pg -p 5433:5432 \
   -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=figaro postgres:16
 ```
 
-**第 2 步 — 配置 `.env`**：
-```bash
-cp .env.example .env
-# 编辑 .env，设置：
-#   OPENAI_API_KEY=your-api-key
-#   POSTGRES_PASSWORD=postgres
-```
-
-**第 3 步 — 后端**：
+**第 2 步 — 后端**：
 ```bash
 POSTGRES_HOST=localhost POSTGRES_PORT=5433 POSTGRES_PASSWORD=postgres POSTGRES_DB=figaro \
   PYTHONPATH=libs:apps/backend/runners \
@@ -131,7 +128,7 @@ POSTGRES_HOST=localhost POSTGRES_PORT=5433 POSTGRES_PASSWORD=postgres POSTGRES_D
 CUDA_VISIBLE_DEVICES=1 POSTGRES_HOST=localhost ... uv run uvicorn ...
 ```
 
-**第 4 步 — 前端**（在另一个终端）：
+**第 3 步 — 前端**（在另一个终端）：
 ```bash
 cd apps/frontend && pnpm install && pnpm dev
 ```
@@ -208,14 +205,27 @@ figaro/
 
 欢迎提 PR！Figaro 的目标是做一个可读性强、研究友好的联邦学习平台。
 
-**Roadmap**（暂定，欢迎贡献）：
+**Roadmap**：
 
-- [ ] **更丰富的 Agent 规划** —— LangGraph 流水线加入多步反思和失败恢复
-- [ ] **更多聚合策略** —— 在现有 FedAvg 之上补充 FedProx、FedAvgM、Scaffold
-- [ ] **分布式模式加固** —— 容错、客户端重连、异构 worker 支持
-- [ ] **扩展数据集和模型** —— 突破 CIFAR-10 / MNIST 和 CNN / ResNet 的范围
-- [ ] **端到端可复现** —— 确定性种子、产物血缘、一键回放
-- [ ] **可观测性** —— 单实验指标面板与结构化日志
+**Phase 1：夯实 Agentic 实验平台**
+- [x] **Agent 交互体验升级** —— 支持多轮对话微调实验计划，提供实验执行前的Plan Preview。
+- [x] **执行与分析透明化** —— 支持实验节点的实时状态追踪，以及 Agent 驱动的运行结果自动化图表解释。
+- [ ] **配置引擎重构** —— 引入基于 Pydantic/JSON Schema 的严格强校验，彻底修复 `config_schema` 与底层算法实现不一致的问题。
+- [ ] **高阶实验管理** —— 支持按指标、超参等多维度搜索过滤实验历史，支持配置文件版本控制与 Diff 差异对比。
+
+**Phase 2：LLM / LoRA 联邦微调支持**
+- [ ] **大模型生态原生接入** —— 内置 Hugging Face 适配层，一键加载主流开源模型，支持 JSONL 格式的指令微调数据集高效解析。
+- [ ] **高效分布式微调** —— 深度集成 LoRA/PEFT 训练环境，支持 QLoRA (4-bit/8-bit 量化) 以显著降低边缘节点的显存门槛。
+- [ ] **专属权重聚合策略** —— 针对 LLM 微调定制的 Adapter 权重聚合机制，探索支持客户端异构 LoRA Rank 的聚合方案。
+- [ ] **大模型专项评估体系** —— 集成生成式 NLP 指标，并引入基于大模型的自动化指令跟随能力评估 (LLM-as-a-Judge)。
+- [ ] **资源护栏与预判** —— 训练任务启动前进行动态 GPU 显存预估（防 OOM 机制），并支持梯度累积与 Checkpointing 的自动调优。
+
+**Phase 3：平台化与企业级协作**
+- [ ] **多租户与细粒度权限** —— 构建多用户隔离的项目空间 (Workspaces)，引入基于角色的访问控制 (RBAC) 和完整的操作审计日志。
+- [ ] **生产级调度与容错** —— 实现全局 GPU 资源排队与配额限制，增强分布式环境下的客户端掉线重连与死机容错机制。
+- [ ] **云原生基础设施** —— 提供原生的 Kubernetes (K8s) Runner 支持，支持基于排队任务量的 Worker 节点动态扩缩容。
+- [ ] **模型资产与血缘管理** —— 建立集中式的产物注册表 (Artifact Registry)，追踪从数据集版本到最终模型权重的完整数据血缘 (Lineage)。
+- [ ] **治理与安全合规** —— 提供自动化的隐私合规检查与报告生成（例如审计差分隐私的 $\epsilon$ 参数），确保企业级联邦学习的数据安全。
 
 <p align="center">
   <sub>Figaro 仅用于科研和教学目的。</sub>
