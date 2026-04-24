@@ -1,0 +1,44 @@
+name: ci-backend
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/backend/**"
+      - "libs/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/ci-backend.yml"
+  pull_request:
+    paths:
+      - "apps/backend/**"
+      - "libs/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/ci-backend.yml"
+
+concurrency:
+  group: ci-backend-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Run pytest
+        run: uv run pytest apps/backend/tests -q

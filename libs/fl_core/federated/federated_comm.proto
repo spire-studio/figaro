@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+package federated;
+
+service FederatedService {
+    // 客户端注册，返回成功状态
+    rpc Register(ClientInfo) returns (RegistrationResponse);
+    
+    // Server 下发指令
+    rpc TaskStream(stream TaskResponse) returns (stream TaskRequest);
+}
+
+message ClientInfo {
+    int32 client_id = 1;
+}
+
+message RegistrationResponse {
+    bool success = 1;
+    string message = 2;
+}
+
+message TaskRequest {
+    int32 round_num = 1;
+    string task_type = 2;       // "TRAIN" 或 "EVALUATE"
+    bytes model_params = 3;     // 序列化后的 Tensor 字节流
+    float learning_rate = 4;
+    int32 epochs = 5;
+    int32 batch_size = 6;       // 新增：适配 FederatedClient.train 的需求
+    bool use_test_data = 7;     // 新增：适配 FederatedClient.evaluate 的需求
+}
+
+message TaskResponse {
+    int32 client_id = 1;
+    bytes updated_params = 2;   // 训练后的参数字节流
+    float loss = 3;
+    float accuracy = 4;
+    int32 samples = 5;          // 返回该客户端真实的样本数量
+    string error = 6;           // 错误信息
+}

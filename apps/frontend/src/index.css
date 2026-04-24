@@ -1,0 +1,184 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+
+    --primary: 222.2 47.4% 11.2%;
+    --primary-foreground: 210 40% 98%;
+
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 222.2 84% 4.9%;
+
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 210 40% 98%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 212.7 26.8% 83.9%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    margin: 0;
+    min-height: 100vh;
+    font-family:
+      -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
+      "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol",
+      sans-serif;
+    line-height: 1.5;
+  }
+
+  #root {
+    min-height: 100vh;
+  }
+}
+
+/* ── Markdown report styling ── */
+.markdown-report {
+  @apply text-sm leading-relaxed;
+  color: hsl(var(--foreground));
+}
+
+.markdown-report h1 {
+  @apply mb-3 mt-4 border-b pb-2 text-lg font-bold;
+  border-color: hsl(var(--border));
+}
+
+.markdown-report h2 {
+  @apply mb-2 mt-4 border-b pb-1.5 text-base font-semibold;
+  border-color: hsl(var(--border));
+}
+
+.markdown-report h3 {
+  @apply mb-2 mt-3 text-sm font-semibold;
+}
+
+.markdown-report p {
+  @apply mb-2;
+}
+
+.markdown-report ul {
+  @apply mb-3 ml-5 list-disc space-y-1;
+}
+
+.markdown-report ol {
+  @apply mb-3 ml-5 list-decimal space-y-1;
+}
+
+.markdown-report li {
+  @apply text-sm;
+}
+
+.markdown-report strong {
+  @apply font-semibold;
+  color: hsl(var(--foreground));
+}
+
+.markdown-report code {
+  @apply rounded px-1.5 py-0.5 font-mono text-xs;
+  background: hsl(var(--muted));
+  color: hsl(var(--foreground));
+}
+
+.markdown-report pre {
+  @apply mb-3 overflow-x-auto rounded-lg p-3 text-xs;
+  background: hsl(var(--muted));
+}
+
+.markdown-report pre code {
+  @apply bg-transparent p-0;
+}
+
+.markdown-report blockquote {
+  @apply mb-3 border-l-4 pl-3 italic;
+  border-color: hsl(var(--border));
+  color: hsl(var(--muted-foreground));
+}
+
+.markdown-report hr {
+  @apply my-4;
+  border-color: hsl(var(--border));
+}
+
+/* Tables */
+.markdown-report table {
+  @apply mb-3 w-full border-collapse overflow-hidden rounded-lg text-xs;
+  border: 1px solid hsl(var(--border));
+}
+
+.markdown-report thead {
+  background: hsl(var(--muted));
+}
+
+.markdown-report th {
+  @apply px-3 py-2 text-left text-xs font-semibold;
+  border: 1px solid hsl(var(--border));
+  color: hsl(var(--foreground));
+}
+
+.markdown-report td {
+  @apply px-3 py-1.5 text-xs;
+  border: 1px solid hsl(var(--border));
+  color: hsl(var(--foreground));
+}
+
+.markdown-report tbody tr:hover {
+  background: hsl(var(--accent) / 0.5);
+}
+
+.markdown-report a {
+  @apply underline;
+  color: hsl(var(--primary));
+}

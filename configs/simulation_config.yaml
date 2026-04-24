@@ -1,0 +1,40 @@
+dataset:
+  name: CIFAR-10
+  data_dir: ./datasets
+  distribution: non_iid
+  alpha: 0.5
+  num_clients: 3
+model:
+  name: CNN
+  input_shape:
+  - 32
+  - 32
+  - 3
+  num_classes: 10
+federated:
+  num_rounds: 10
+  clients_per_round: 2
+  local_epochs: 5
+  learning_rate: 0.01
+  aggregation: fedavg
+  num_clients: 3
+  seed: 42
+compression:
+  sparsification:
+    enable: false
+    ratio: 0.5
+privacy:
+  homomorphic_encryption:
+    enable: false
+    poly_modulus_degree: 8192
+system:
+  mode: simulation
+  node_role: server
+distributed:
+  server_ip: localhost
+  port: 50052
+  client_id: 0
+logging:
+  log_dir: ./logs
+  save_results: true
+  results_dir: ./results

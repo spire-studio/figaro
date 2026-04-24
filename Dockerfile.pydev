@@ -1,0 +1,49 @@
+# syntax=docker/dockerfile:1.7
+FROM ghcr.io/astral-sh/uv:python3.11-bookworm-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    UV_PROJECT_ENVIRONMENT=/opt/venv \
+    PATH="/opt/venv/bin:${PATH}"
+
+WORKDIR /workspace
+
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG ALL_PROXY
+ARG NO_PROXY
+
+RUN set -eux; \
+    HTTP_PROXY_BUILD="$(printf '%s' "${HTTP_PROXY:-}" | sed -e 's#127[.]0[.]0[.]1#host.docker.internal#g' -e 's#localhost#host.docker.internal#g')"; \
+    HTTPS_PROXY_BUILD="$(printf '%s' "${HTTPS_PROXY:-}" | sed -e 's#127[.]0[.]0[.]1#host.docker.internal#g' -e 's#localhost#host.docker.internal#g')"; \
+    ALL_PROXY_BUILD="$(printf '%s' "${ALL_PROXY:-}" | sed -e 's#127[.]0[.]0[.]1#host.docker.internal#g' -e 's#localhost#host.docker.internal#g')"; \
+    echo "build proxies: HTTP=${HTTP_PROXY_BUILD} HTTPS=${HTTPS_PROXY_BUILD} ALL=${ALL_PROXY_BUILD}"; \
+    export HTTP_PROXY="${HTTP_PROXY_BUILD}" http_proxy="${HTTP_PROXY_BUILD}"; \
+    export HTTPS_PROXY="${HTTPS_PROXY_BUILD}" https_proxy="${HTTPS_PROXY_BUILD}"; \
+    export ALL_PROXY="${ALL_PROXY_BUILD}" all_proxy="${ALL_PROXY_BUILD}"; \
+    export NO_PROXY="${NO_PROXY:-}" no_proxy="${NO_PROXY:-}"; \
+    apt-get -o Acquire::Retries=5 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update; \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    build-essential \
+    git \
+    curl \
+    ca-certificates \
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY pyproject.toml uv.lock ./
+RUN --mount=type=cache,target=/root/.cache/uv \
+    set -eux; \
+    HTTP_PROXY_BUILD="$(printf '%s' "${HTTP_PROXY:-}" | sed -e 's#127[.]0[.]0[.]1#host.docker.internal#g' -e 's#localhost#host.docker.internal#g')"; \
+    HTTPS_PROXY_BUILD="$(printf '%s' "${HTTPS_PROXY:-}" | sed -e 's#127[.]0[.]0[.]1#host.docker.internal#g' -e 's#localhost#host.docker.internal#g')"; \
+    ALL_PROXY_BUILD="$(printf '%s' "${ALL_PROXY:-}" | sed -e 's#127[.]0[.]0[.]1#host.docker.internal#g' -e 's#localhost#host.docker.internal#g')"; \
+    echo "build proxies(uv): HTTP=${HTTP_PROXY_BUILD} HTTPS=${HTTPS_PROXY_BUILD} ALL=${ALL_PROXY_BUILD}"; \
+    export HTTP_PROXY="${HTTP_PROXY_BUILD}" http_proxy="${HTTP_PROXY_BUILD}"; \
+    export HTTPS_PROXY="${HTTPS_PROXY_BUILD}" https_proxy="${HTTPS_PROXY_BUILD}"; \
+    export ALL_PROXY="${ALL_PROXY_BUILD}" all_proxy="${ALL_PROXY_BUILD}"; \
+    export NO_PROXY="${NO_PROXY:-}" no_proxy="${NO_PROXY:-}"; \
+    uv sync --frozen --no-install-project
+
+CMD ["bash"]

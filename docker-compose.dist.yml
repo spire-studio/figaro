@@ -1,0 +1,285 @@
+name: figaro-dist
+
+x-backend-base: &backend-base
+  build:
+    context: .
+    dockerfile: Dockerfile.pydev
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    args:
+      HTTP_PROXY: ${HTTP_PROXY:-}
+      HTTPS_PROXY: ${HTTPS_PROXY:-}
+      ALL_PROXY: ${ALL_PROXY:-}
+      NO_PROXY: ${NO_PROXY:-}
+  restart: unless-stopped
+  working_dir: /workspace
+  command: >
+    bash -lc "/opt/venv/bin/python -m uvicorn app.main:app
+    --reload
+    --app-dir apps/backend
+    --host 0.0.0.0
+    --port 8000"
+  environment:
+    ENVIRONMENT: development
+    DEBUG: "true"
+    ALL_PROXY: ""
+    all_proxy: ""
+    HTTP_PROXY: ""
+    http_proxy: ""
+    HTTPS_PROXY: ""
+    https_proxy: ""
+    NO_PROXY: localhost,localhost
+    no_proxy: localhost,localhost
+    PROJECT_NAME: Figaro
+    API_PREFIX: /api/v1
+    POSTGRES_PORT: 5432
+    POSTGRES_USER: ${POSTGRES_USER:-postgres}
+    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    POSTGRES_POOL_SIZE: "5"
+    POSTGRES_POOL_MAX_OVERFLOW: "10"
+    POSTGRES_POOL_TIMEOUT: "30"
+    POSTGRES_POOL_RECYCLE: "1800"
+    NVIDIA_VISIBLE_DEVICES: all
+    NVIDIA_DRIVER_CAPABILITIES: compute,utility
+  gpus: all
+  volumes:
+    - ./:/workspace
+    - figaro_dist_uv_cache:/root/.cache/uv
+
+x-frontend-base: &frontend-base
+  image: node:20-bookworm
+  restart: unless-stopped
+  working_dir: /workspace/apps/frontend
+  command: >
+    bash -lc "corepack enable
+    && pnpm install --frozen-lockfile
+    && pnpm dev --host 0.0.0.0 --port 5173"
+  environment:
+    CHOKIDAR_USEPOLLING: "true"
+    VITE_DISTRIBUTED_SERVER_API_BASE: http://localhost:${DIST_SERVER_API_PORT:-8100}
+  volumes:
+    - ./:/workspace
+    - figaro_dist_pnpm_store:/root/.local/share/pnpm/store
+  networks:
+    - figaro-dist-net
+
+services:
+  postgres-server:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DIST_SERVER_POSTGRES_DB:-figaro_server}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    ports:
+      - "${DIST_SERVER_POSTGRES_HOST_PORT:-55431}:5432"
+    volumes:
+      - figaro_dist_pg_server:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${DIST_SERVER_POSTGRES_DB:-figaro_server}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - figaro-dist-net
+
+  backend-server:
+    <<: *backend-base
+    container_name: figaro-dist-backend-server
+    network_mode: host
+    command: >
+      bash -lc "/opt/venv/bin/python -m uvicorn app.main:app
+      --reload
+      --app-dir apps/backend
+      --host 0.0.0.0
+      --port ${DIST_SERVER_API_PORT:-8100}"
+    environment:
+      ENVIRONMENT: development
+      DEBUG: "true"
+      PROJECT_NAME: Figaro
+      API_PREFIX: /api/v1
+      FRONTEND_URL: http://localhost:${DIST_SERVER_WEB_PORT:-5273}
+      ALLOWED_ORIGINS: http://localhost:${DIST_SERVER_WEB_PORT:-5273},http://localhost:${DIST_SERVER_WEB_PORT:-5273}
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: ${DIST_SERVER_POSTGRES_HOST_PORT:-55431}
+      POSTGRES_DB: ${DIST_SERVER_POSTGRES_DB:-figaro_server}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_POOL_SIZE: "5"
+      POSTGRES_POOL_MAX_OVERFLOW: "10"
+      POSTGRES_POOL_TIMEOUT: "30"
+      POSTGRES_POOL_RECYCLE: "1800"
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    depends_on:
+      postgres-server:
+        condition: service_healthy
+
+  frontend-server:
+    <<: *frontend-base
+    container_name: figaro-dist-frontend-server
+    environment:
+      CHOKIDAR_USEPOLLING: "true"
+      VITE_API_BASE_URL: http://localhost:${DIST_SERVER_API_PORT:-8100}
+      VITE_DISTRIBUTED_SERVER_API_BASE: http://localhost:${DIST_SERVER_API_PORT:-8100}
+      VITE_DISTRIBUTED_GRPC_HOST: localhost
+      VITE_DISTRIBUTED_GRPC_PORT: "50052"
+    ports:
+      - "${DIST_SERVER_WEB_PORT:-5273}:5173"
+    volumes:
+      - ./:/workspace
+      - figaro_dist_pnpm_store:/root/.local/share/pnpm/store
+      - figaro_dist_frontend_server_node_modules:/workspace/apps/frontend/node_modules
+    depends_on:
+      - backend-server
+
+  postgres-client0:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DIST_CLIENT0_POSTGRES_DB:-figaro_client0}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    ports:
+      - "${DIST_CLIENT0_POSTGRES_HOST_PORT:-55432}:5432"
+    volumes:
+      - figaro_dist_pg_client0:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${DIST_CLIENT0_POSTGRES_DB:-figaro_client0}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - figaro-dist-net
+
+  backend-client0:
+    <<: *backend-base
+    container_name: figaro-dist-backend-client0
+    network_mode: host
+    command: >
+      bash -lc "/opt/venv/bin/python -m uvicorn app.main:app
+      --reload
+      --app-dir apps/backend
+      --host 0.0.0.0
+      --port ${DIST_CLIENT0_API_PORT:-8101}"
+    environment:
+      ENVIRONMENT: development
+      DEBUG: "true"
+      PROJECT_NAME: Figaro
+      API_PREFIX: /api/v1
+      FRONTEND_URL: http://localhost:${DIST_CLIENT0_WEB_PORT:-5274}
+      ALLOWED_ORIGINS: http://localhost:${DIST_CLIENT0_WEB_PORT:-5274},http://localhost:${DIST_CLIENT0_WEB_PORT:-5274}
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: ${DIST_CLIENT0_POSTGRES_HOST_PORT:-55432}
+      POSTGRES_DB: ${DIST_CLIENT0_POSTGRES_DB:-figaro_client0}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_POOL_SIZE: "5"
+      POSTGRES_POOL_MAX_OVERFLOW: "10"
+      POSTGRES_POOL_TIMEOUT: "30"
+      POSTGRES_POOL_RECYCLE: "1800"
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    depends_on:
+      postgres-client0:
+        condition: service_healthy
+
+  frontend-client0:
+    <<: *frontend-base
+    container_name: figaro-dist-frontend-client0
+    environment:
+      CHOKIDAR_USEPOLLING: "true"
+      VITE_API_BASE_URL: http://localhost:${DIST_CLIENT0_API_PORT:-8101}
+      VITE_DISTRIBUTED_SERVER_API_BASE: http://localhost:${DIST_SERVER_API_PORT:-8100}
+      VITE_DISTRIBUTED_GRPC_HOST: localhost
+      VITE_DISTRIBUTED_GRPC_PORT: "50052"
+    ports:
+      - "${DIST_CLIENT0_WEB_PORT:-5274}:5173"
+    volumes:
+      - ./:/workspace
+      - figaro_dist_pnpm_store:/root/.local/share/pnpm/store
+      - figaro_dist_frontend_client0_node_modules:/workspace/apps/frontend/node_modules
+    depends_on:
+      - backend-client0
+
+  postgres-client1:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DIST_CLIENT1_POSTGRES_DB:-figaro_client1}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    ports:
+      - "${DIST_CLIENT1_POSTGRES_HOST_PORT:-55433}:5432"
+    volumes:
+      - figaro_dist_pg_client1:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${DIST_CLIENT1_POSTGRES_DB:-figaro_client1}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - figaro-dist-net
+
+  backend-client1:
+    <<: *backend-base
+    container_name: figaro-dist-backend-client1
+    network_mode: host
+    command: >
+      bash -lc "/opt/venv/bin/python -m uvicorn app.main:app
+      --reload
+      --app-dir apps/backend
+      --host 0.0.0.0
+      --port ${DIST_CLIENT1_API_PORT:-8102}"
+    environment:
+      ENVIRONMENT: development
+      DEBUG: "true"
+      PROJECT_NAME: Figaro
+      API_PREFIX: /api/v1
+      FRONTEND_URL: http://localhost:${DIST_CLIENT1_WEB_PORT:-5275}
+      ALLOWED_ORIGINS: http://localhost:${DIST_CLIENT1_WEB_PORT:-5275},http://localhost:${DIST_CLIENT1_WEB_PORT:-5275}
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: ${DIST_CLIENT1_POSTGRES_HOST_PORT:-55433}
+      POSTGRES_DB: ${DIST_CLIENT1_POSTGRES_DB:-figaro_client1}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_POOL_SIZE: "5"
+      POSTGRES_POOL_MAX_OVERFLOW: "10"
+      POSTGRES_POOL_TIMEOUT: "30"
+      POSTGRES_POOL_RECYCLE: "1800"
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    depends_on:
+      postgres-client1:
+        condition: service_healthy
+
+  frontend-client1:
+    <<: *frontend-base
+    container_name: figaro-dist-frontend-client1
+    environment:
+      CHOKIDAR_USEPOLLING: "true"
+      VITE_API_BASE_URL: http://localhost:${DIST_CLIENT1_API_PORT:-8102}
+      VITE_DISTRIBUTED_SERVER_API_BASE: http://localhost:${DIST_SERVER_API_PORT:-8100}
+      VITE_DISTRIBUTED_GRPC_HOST: localhost
+      VITE_DISTRIBUTED_GRPC_PORT: "50052"
+    ports:
+      - "${DIST_CLIENT1_WEB_PORT:-5275}:5173"
+    volumes:
+      - ./:/workspace
+      - figaro_dist_pnpm_store:/root/.local/share/pnpm/store
+      - figaro_dist_frontend_client1_node_modules:/workspace/apps/frontend/node_modules
+    depends_on:
+      - backend-client1
+
+networks:
+  figaro-dist-net:
+
+volumes:
+  figaro_dist_uv_cache:
+  figaro_dist_pnpm_store:
+  figaro_dist_pg_server:
+  figaro_dist_pg_client0:
+  figaro_dist_pg_client1:
+  figaro_dist_frontend_server_node_modules:
+  figaro_dist_frontend_client0_node_modules:
+  figaro_dist_frontend_client1_node_modules:
