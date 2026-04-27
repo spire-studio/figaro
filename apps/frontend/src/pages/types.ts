@@ -36,6 +36,7 @@ export type AgentPlanDraft = {
   job_id: number;
   goal: string;
   experiments: any[];
+  config_constraints?: Record<string, unknown>;
 };
 
 export type Point = {
@@ -233,6 +234,8 @@ export type AgentPageProps = {
   activeTaskId: string | null;
   busy: boolean;
   clearResult: () => void;
+  configConstraints: Record<string, unknown>;
+  configSchema: Record<string, unknown> | null;
   defaultModelName: string;
   experiments: AgentExperimentResponse[];
   experimentRuns: AgentRunResponse[];
@@ -254,6 +257,8 @@ export type AgentPageProps = {
   selectedHistoryJobId: number | null;
   selectExperiment: (experimentId: number) => Promise<void>;
   selectHistoryJob: (optimizationJobId: number) => Promise<void>;
+  setConfigConstraint: (path: string, value: unknown) => void;
+  clearConfigConstraint: (path: string) => void;
   setGoal: Dispatch<SetStateAction<string>>;
   setJobName: Dispatch<SetStateAction<string>>;
   setMaxIterations: Dispatch<SetStateAction<number>>;

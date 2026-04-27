@@ -12,6 +12,7 @@ import {
 } from "../../api/agent";
 import type { AgentPageProps, AgentWorkflowStep, AgentPlanDraft } from "../../pages/types";
 import { toErrorMessage } from "../simulation/utils";
+import { removeValueByPath, setConfigValue } from "./schema";
 
 const DEFAULT_GOAL = "Compare CIFAR-10 non-IID with alpha=0.1, 0.3, 0.5";
 const POLL_INTERVAL_MS = 1500;
@@ -70,6 +71,8 @@ function toHistorySummary(progress: AgentOptimizeProgressResponse): AgentOptimiz
 export function useAgentController(): AgentPageProps {
   const [workflowStep, setWorkflowStep] = useState<AgentWorkflowStep>("home");
   const [draftPlan, setDraftPlan] = useState<AgentPlanDraft | null>(null);
+  const [configSchema, setConfigSchema] = useState<Record<string, unknown> | null>(null);
+  const [configConstraints, setConfigConstraints] = useState<Record<string, unknown>>({});
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [goal, setGoal] = useState(DEFAULT_GOAL);
@@ -146,8 +149,10 @@ export function useAgentController(): AgentPageProps {
         setDraftPlan({
           job_id: detail.optimization_job_id!,
           goal: detail.goal,
-          experiments: detail.draft_experiments
+          experiments: detail.draft_experiments,
+          config_constraints: detail.config_constraints ?? {},
         });
+        setConfigConstraints(detail.config_constraints ?? {});
         setWorkflowStep("preview");
       } else if (detail.status === "completed") {
         setResult(toFinalResult(detail));
@@ -176,12 +181,14 @@ export function useAgentController(): AgentPageProps {
         job_name: trimmedJobName,
         model_name: modelName.trim().length > 0 ? modelName.trim() : null,
         system_mode: "simulation",
+        config_constraints: configConstraints,
       });
   
       setDraftPlan({
         job_id: data.optimization_job_id!,
         goal: data.goal,
         experiments: data.experiments,
+        config_constraints: data.config_constraints ?? configConstraints,
       });
       
       setWorkflowStep("preview");
@@ -209,6 +216,7 @@ export function useAgentController(): AgentPageProps {
         model_name: modelName.trim().length > 0 ? modelName.trim() : null,
         objective: objective,
         planned_experiments: editedExperiments, // Bypass LLM parse in backend
+        config_constraints: draftPlan.config_constraints ?? configConstraints,
       });
       
       setProgress(data);
@@ -244,6 +252,7 @@ export function useAgentController(): AgentPageProps {
         model_name: modelName.trim().length > 0 ? modelName.trim() : null,
         job_name: trimmedJobName,
         objective,
+        config_constraints: configConstraints,
       });
       setProgress(data);
       setActiveTaskId(data.task_id);
@@ -292,7 +301,20 @@ export function useAgentController(): AgentPageProps {
         toast.error(toErrorMessage(error), { id: "agent-models" });
       }
     };
+    const loadConfigSchema = async () => {
+      try {
+        const schema = await agentApi.getConfigSchema();
+        if (!cancelled) {
+          setConfigSchema(schema);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          toast.error(toErrorMessage(error), { id: "agent-config-schema" });
+        }
+      }
+    };
     void loadModelOptions();
+    void loadConfigSchema();
     void refreshHistoryJobs().catch((error: unknown) => {
       if (!cancelled) {
         notifyError(error, "agent-history-jobs");
@@ -369,10 +391,21 @@ export function useAgentController(): AgentPageProps {
     };
   }, [activeTaskId]);
 
+  function setConfigConstraint(path: string, value: unknown): void {
+    setConfigConstraints((current) => setConfigValue(current, path, value));
+  }
+
+  function clearConfigConstraint(path: string): void {
+    setConfigConstraints((current) => removeValueByPath(current, path));
+  }
+
   return {
     activeTaskId,
     busy,
+    clearConfigConstraint,
     clearResult,
+    configConstraints,
+    configSchema,
     defaultModelName,
     experiments,
     experimentRuns,
@@ -394,6 +427,7 @@ export function useAgentController(): AgentPageProps {
     selectedHistoryJobId,
     selectExperiment,
     selectHistoryJob,
+    setConfigConstraint,
     setGoal,
     setJobName,
     setMaxIterations,

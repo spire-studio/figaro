@@ -26,7 +26,13 @@ from app.services.agent.experiment_service import AgentExperimentRunService, Age
 from app.services.llm import LLMService
 
 from .capabilities import get_platform_capabilities
-from .planning import build_initial_config, select_llm_model
+from .planning import (
+    build_initial_config,
+    build_schema_prompt_context,
+    collect_disabled_option_errors,
+    deep_merge_config,
+    select_llm_model,
+)
 from .prompts import build_plan_prompt, build_plan_system_instructions
 from .state import AgentState, ExperimentPlan, ExperimentRecord
 from .summary import build_results_table, build_summary_text, get_last_global_accuracy
@@ -74,17 +80,36 @@ class FederatedAgentGraphBuilder:
         state.phase = "parsing"
         await self._publish_progress(state)
 
+        experiment_service = AgentExperimentService(self._session)
+        schema = experiment_service.get_config_schema()
+        base_config = build_initial_config(schema)
+        constrained_base = experiment_service.normalize_simulation_config(
+            deep_merge_config(base_config, state.config_constraints)
+        )
+        disabled_errors = collect_disabled_option_errors(constrained_base, schema)
+        if disabled_errors:
+            raise exceptions.BadRequestError("; ".join(disabled_errors))
+
         if getattr(state, "planned_experiments", None):
             experiments: list[ExperimentPlan] = []
             for idx, exp in enumerate(state.planned_experiments):
                 name = exp.get("name", f"exp-{idx + 1}")
+                raw_config = exp.get("config_patch", exp.get("config", {}))
+                if not isinstance(raw_config, dict):
+                    raw_config = {}
+                normalized = experiment_service.normalize_simulation_config(
+                    deep_merge_config(constrained_base, raw_config)
+                )
+                disabled_errors = collect_disabled_option_errors(normalized, schema)
+                if disabled_errors:
+                    raise exceptions.BadRequestError("; ".join(disabled_errors))
                 experiments.append(
                     ExperimentPlan(
                         iteration=idx + 1,
                         iteration_goal=f"Run experiment: {name}",
                         name=name,
                         plan_summary=exp.get("plan_summary", ""),
-                        config_patch=exp.get("config_patch", {}),
+                        config_patch=normalized,
                     )
                 )
             state.experiments = experiments
@@ -93,16 +118,16 @@ class FederatedAgentGraphBuilder:
             await self._publish_progress(state)
             return state
 
-        experiment_service = AgentExperimentService(self._session)
-        schema = experiment_service.get_config_schema()
         capabilities = get_platform_capabilities()
-        base_config = build_initial_config(schema)
+        schema_context = build_schema_prompt_context(schema)
 
         instructions = build_plan_system_instructions(state.goal)
         prompt = build_plan_prompt(
             state=state,
             capabilities=capabilities,
-            base_config=base_config,
+            base_config=constrained_base,
+            schema_context=schema_context,
+            config_constraints=state.config_constraints,
         )
 
         logger.info("llm input instructions=%s", instructions)
@@ -140,15 +165,17 @@ class FederatedAgentGraphBuilder:
                         patch_config = exp.get("config", {})
                         if not isinstance(patch_config, dict):
                             patch_config = {}
-                        # Merge with base config and normalize
-                        current_full_config = copy.deepcopy(base_config)
-                        merged = self._deep_merge_dicts(current_full_config, patch_config)
+                        # Merge with constrained base config and normalize.
+                        merged = deep_merge_config(constrained_base, patch_config)
                         try:
                             normalized = experiment_service.normalize_simulation_config(merged)
+                            disabled_errors = collect_disabled_option_errors(normalized, schema)
+                            if disabled_errors:
+                                raise exceptions.BadRequestError("; ".join(disabled_errors))
                         except Exception:
                             # 如果合并出错，至少保证能跑，回退到基础配置
                             normalized = experiment_service.normalize_simulation_config(
-                                copy.deepcopy(base_config)
+                                copy.deepcopy(constrained_base)
                             )
                         experiments.append(
                             ExperimentPlan(
@@ -165,7 +192,7 @@ class FederatedAgentGraphBuilder:
         # Fallback: if no experiments were parsed, run a single default
         if not experiments:
             normalized_base = experiment_service.normalize_simulation_config(
-                copy.deepcopy(base_config)
+                copy.deepcopy(constrained_base)
             )
             experiments.append(
                 ExperimentPlan(
@@ -173,7 +200,7 @@ class FederatedAgentGraphBuilder:
                     iteration_goal="Run default experiment (LLM parse failed)",
                     name="default",
                     plan_summary="Fallback: running single default configuration.",
-                    config_patch={},
+                    config_patch=normalized_base,
                 )
             )
 
@@ -192,7 +219,9 @@ class FederatedAgentGraphBuilder:
         experiment_service = AgentExperimentService(self._session)
         run_service = AgentExperimentRunService(self._session)
         schema = experiment_service.get_config_schema()
-        base_config = build_initial_config(schema)
+        base_config = experiment_service.normalize_simulation_config(
+            deep_merge_config(build_initial_config(schema), state.config_constraints)
+        )
 
         max_wait_seconds = 3600
         poll_interval = 2
@@ -203,13 +232,11 @@ class FederatedAgentGraphBuilder:
             state.iteration = idx + 1
 
             # -- Build config --
-            merged = self._deep_merge_dicts(base_config, plan.config_patch)
-            try:
-                config = experiment_service.normalize_simulation_config(merged)
-            except exceptions.BadRequestError:
-                config = experiment_service.normalize_simulation_config(
-                    copy.deepcopy(base_config)
-                )
+            merged = deep_merge_config(base_config, plan.config_patch)
+            config = experiment_service.normalize_simulation_config(merged)
+            disabled_errors = collect_disabled_option_errors(config, schema)
+            if disabled_errors:
+                raise exceptions.BadRequestError("; ".join(disabled_errors))
             state.current_config = config
 
             # -- Launch --

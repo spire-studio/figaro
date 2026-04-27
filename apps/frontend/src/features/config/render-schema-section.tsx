@@ -53,7 +53,7 @@ export function renderSchemaSection(
   const blocks: ReactNode[] = [];
 
   for (const [key, rawDefinition] of Object.entries(schemaSection)) {
-    if (key === "role" || key === "depends_on" || key === "hidden") continue;
+    if (key === "role" || key === "depends_on" || key === "hidden" || key === "ui") continue;
     if (!isRecord(rawDefinition)) continue;
 
     const definition = rawDefinition as SchemaNode;

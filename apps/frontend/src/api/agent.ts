@@ -11,6 +11,7 @@ export type AgentOptimizeRequest = {
   model_name?: string | null;
   job_name?: string | null;
   objective: AgentOptimizationObjective;
+  config_constraints?: Record<string, unknown>;
 };
 
 export type AgentConfigChange = {
@@ -91,6 +92,7 @@ export type AgentOptimizeProgressResponse = {
   best_metrics: RunMetrics | null;
   experiments: AgentExperimentSummary[];
   draft_experiments?: any[];
+  config_constraints?: Record<string, unknown>;
   summary_text: string | null;
   error_message: string | null;
   created_at: string | null;
@@ -168,6 +170,7 @@ export interface AgentPlanPreviewRequest {
   job_name: string;
   model_name: string | null;
   system_mode: string;
+  config_constraints?: Record<string, unknown>;
 };
 
 export interface AgentPlanPreviewResponse {
@@ -175,6 +178,7 @@ export interface AgentPlanPreviewResponse {
   goal: string;
   experiments: ExperimentPlanPreview[];
   system_mode: string;
+  config_constraints?: Record<string, unknown>;
 };
 
 export interface AgentPlanReviseRequest {
@@ -189,6 +193,11 @@ async function readJson<T>(response: Response): Promise<T> {
 }
 
 export const agentApi = {
+  async getConfigSchema(): Promise<Record<string, unknown>> {
+    const response = await fetch(`${baseUrl}/api/v1/agent/config/schema`);
+    return readJson<Record<string, unknown>>(response);
+  },
+
   async listModels(): Promise<AgentModelsResponse> {
     const response = await fetch(`${baseUrl}/api/v1/agent/models`);
     return readJson<AgentModelsResponse>(response);

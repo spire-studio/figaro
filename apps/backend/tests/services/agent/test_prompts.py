@@ -30,10 +30,24 @@ def test_build_plan_prompt_includes_history_and_context():
         state=state,
         capabilities={"datasets": ["mnist"]},
         base_config={"federated": {"num_clients": 3}},
+        schema_context={
+            "fields": [
+                {
+                    "path": "federated.aggregation",
+                    "executable_options": ["fedavg"],
+                    "disabled_options": ["scaffold"],
+                }
+            ]
+        },
+        config_constraints={"model": {"name": "ResNet"}},
     )
 
     assert "Experiment request" in prompt
     assert "test alpha=0.1,0.3" in prompt
-    assert "Capabilities" in prompt
+    assert "Runtime capabilities" in prompt
     assert "Default base config" in prompt
+    assert "Schema context from config_schema.yaml" in prompt
+    assert "User-selected structured constraints" in prompt
+    assert "disabled_options" in prompt
+    assert "ResNet" in prompt
     assert "Return ONLY a JSON object" in prompt

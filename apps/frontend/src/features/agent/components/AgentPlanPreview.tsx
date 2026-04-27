@@ -1,22 +1,63 @@
-import { useState } from "react";
-import { Play, Clock, Cpu, AlertTriangle, Sparkles, MessageSquare, ClipboardList, Target } from "lucide-react";
-import { Button } from "../../../components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../../../components/ui/card";
-import { Badge } from "../../../components/ui/badge";
-import { Input } from "../../../components/ui/input";
-import { Textarea } from "../../../components/ui/textarea";
+import { useEffect, useMemo, useState } from "react";
+import { ClipboardList, MessageSquare, Play, Sparkles, Target } from "lucide-react";
 import { toast } from "sonner";
+
 import { agentApi } from "../../../api/agent";
+import { Badge } from "../../../components/ui/badge";
+import { Button } from "../../../components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../../components/ui/card";
+import { Input } from "../../../components/ui/input";
+import { NumberStepper } from "../../../components/ui/number-stepper";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../components/ui/select";
+import { Switch } from "../../../components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../../components/ui/tabs";
+import { Textarea } from "../../../components/ui/textarea";
 import type { AgentPageProps } from "../../../pages/types";
+import { getValueByPath, isRecord } from "../../simulation/utils";
+import {
+  buildAgentConfig,
+  checkDependency,
+  coerceFieldValue,
+  collectAgentSchemaFields,
+  formatFieldValue,
+  optionDisabled,
+  optionLabel,
+  optionMeta,
+  setConfigValue,
+  validateDisabledOptions,
+  type AgentSchemaField,
+} from "../schema";
+
+type LocalExperiment = {
+  name: string;
+  plan_summary: string;
+  config_patch: Record<string, unknown>;
+  _rawJsonString?: string;
+  _jsonError?: boolean;
+  _activeTab?: "form" | "json";
+};
 
 export function AgentPlanPreview(props: AgentPageProps) {
-  const { draftPlan, busy: globalBusy, handleExecutePlan, setWorkflowStep, setDraftPlan } = props;
+  const {
+    configSchema,
+    draftPlan,
+    busy: globalBusy,
+    handleExecutePlan,
+    setWorkflowStep,
+    setDraftPlan,
+  } = props;
 
-  const [localExperiments, setLocalExperiments] = useState(() => 
-    draftPlan?.experiments ? JSON.parse(JSON.stringify(draftPlan.experiments)) : []
+  const [localExperiments, setLocalExperiments] = useState<LocalExperiment[]>(() =>
+    draftPlan?.experiments ? JSON.parse(JSON.stringify(draftPlan.experiments)) : [],
   );
   const [instruction, setInstruction] = useState("");
   const [isRevising, setIsRevising] = useState(false);
+
+  const schemaFields = useMemo(() => collectAgentSchemaFields(configSchema), [configSchema]);
+
+  useEffect(() => {
+    setLocalExperiments(draftPlan?.experiments ? JSON.parse(JSON.stringify(draftPlan.experiments)) : []);
+  }, [draftPlan?.job_id]);
 
   if (!draftPlan) return null;
   const isBusy = globalBusy || isRevising;
@@ -26,13 +67,15 @@ export function AgentPlanPreview(props: AgentPageProps) {
     setIsRevising(true);
     try {
       const response = await agentApi.revisePlan(draftPlan.job_id, { instruction });
-      setLocalExperiments(response.experiments);
+      const nextExperiments = response.experiments as LocalExperiment[];
+      setLocalExperiments(nextExperiments);
       setDraftPlan({
         ...draftPlan,
-        experiments: response.experiments
+        experiments: response.experiments,
+        config_constraints: response.config_constraints ?? draftPlan.config_constraints,
       });
       setInstruction("");
-      toast.success("Plan updated successfully by Agent!");
+      toast.success("Plan updated successfully by Agent.");
     } catch (error: any) {
       toast.error(error.message || "Failed to update plan via Agent.");
     } finally {
@@ -40,33 +83,62 @@ export function AgentPlanPreview(props: AgentPageProps) {
     }
   };
 
-  const handleConfigChange = (index: number, newJsonString: string) => {
+  function patchExperiment(index: number, patch: Partial<LocalExperiment>): void {
+    setLocalExperiments((current) => current.map((exp, idx) => (idx === index ? { ...exp, ...patch } : exp)));
+  }
+
+  function handleFormConfigChange(index: number, path: string, value: unknown): void {
+    setLocalExperiments((current) =>
+      current.map((exp, idx) => {
+        if (idx !== index) return exp;
+        const nextConfig = setConfigValue(exp.config_patch ?? {}, path, value);
+        return {
+          ...exp,
+          config_patch: nextConfig,
+          _rawJsonString: JSON.stringify(nextConfig, null, 2),
+          _jsonError: false,
+        };
+      }),
+    );
+  }
+
+  function handleJsonConfigChange(index: number, newJsonString: string): void {
     const updated = [...localExperiments];
     try {
-      updated[index].config_patch = JSON.parse(newJsonString);
+      const parsed = JSON.parse(newJsonString);
+      if (!isRecord(parsed)) {
+        throw new Error("Config must be an object.");
+      }
+      updated[index].config_patch = parsed;
       updated[index]._jsonError = false;
-    } catch (e) {
+    } catch {
       updated[index]._jsonError = true;
     }
     updated[index]._rawJsonString = newJsonString;
     setLocalExperiments(updated);
-  };
+  }
 
   const onRunClick = () => {
-    const hasErrors = localExperiments.some((exp: any) => exp._jsonError);
-    if (hasErrors) {
+    const hasJsonErrors = localExperiments.some((exp) => exp._jsonError);
+    if (hasJsonErrors) {
       toast.error("Please fix invalid JSON formatting before running.");
       return;
     }
-    const cleanExperiments = localExperiments.map((exp: any) => {
-      const { _rawJsonString, _jsonError, ...rest } = exp;
+
+    const disabledErrors = localExperiments.flatMap((exp) =>
+      validateDisabledOptions(buildAgentConfig(configSchema, exp.config_patch ?? {}), configSchema),
+    );
+    if (disabledErrors.length > 0) {
+      toast.error(disabledErrors[0]);
+      return;
+    }
+
+    const cleanExperiments = localExperiments.map((exp) => {
+      const { _rawJsonString, _jsonError, _activeTab, ...rest } = exp;
       return rest;
     });
     void handleExecutePlan(cleanExperiments);
   };
-
-  const experiments = draftPlan.experiments || [];
-  const totalMinutes = experiments.reduce((acc, curr) => acc + (curr.estimated_minutes || 0), 0);
 
   return (
     <div className="space-y-4 h-full overflow-auto pb-6 pr-2">
@@ -98,7 +170,7 @@ export function AgentPlanPreview(props: AgentPageProps) {
           <div className="p-2 bg-primary/10 rounded-full text-primary shrink-0">
             <MessageSquare className="h-5 w-5" />
           </div>
-          <Input 
+          <Input
             placeholder="Ask the Agent to tweak the plan (e.g., 'Make learning rate smaller' or 'Add one more experiment')..."
             value={instruction}
             onChange={(e) => setInstruction(e.target.value)}
@@ -113,40 +185,6 @@ export function AgentPlanPreview(props: AgentPageProps) {
         </CardContent>
       </Card>
 
-      {/* Resource Estimation Summary */}
-      {/* <div className="grid grid-cols-3 gap-4">
-        <Card className="bg-muted/30">
-          <CardContent className="p-4 flex items-center gap-4">
-            <div className="p-2 bg-blue-100 dark:bg-blue-900/40 rounded-full text-blue-600"><Clock className="h-5 w-5" /></div>
-            <div>
-              <p className="text-xs text-muted-foreground">Est. Total Time</p>
-              <p className="font-semibold">{totalMinutes > 0 ? `~${totalMinutes} mins` : "Unknown"}</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="bg-muted/30">
-          <CardContent className="p-4 flex items-center gap-4">
-            <div className="p-2 bg-purple-100 dark:bg-purple-900/40 rounded-full text-purple-600"><Cpu className="h-5 w-5" /></div>
-            <div>
-              <p className="text-xs text-muted-foreground">Peak VRAM Required</p>
-              <p className="font-semibold">
-                {experiments.length > 0 && experiments[0].estimated_gpu_vram_gb 
-                  ? `~${experiments[0].estimated_gpu_vram_gb} GB` : "Unknown"}
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="bg-muted/30">
-          <CardContent className="p-4 flex items-center gap-4">
-            <div className="p-2 bg-amber-100 dark:bg-amber-900/40 rounded-full text-amber-600"><AlertTriangle className="h-5 w-5" /></div>
-            <div>
-              <p className="text-xs text-muted-foreground">System Mode</p>
-              <p className="font-semibold capitalize">Simulation</p>
-            </div>
-          </CardContent>
-        </Card>
-      </div> */}
-
       <Card>
         <CardHeader>
           <CardTitle className="text-lg flex items-center gap-2">
@@ -154,43 +192,206 @@ export function AgentPlanPreview(props: AgentPageProps) {
             Proposed Execution Plan
           </CardTitle>
           <CardDescription>
-            The agent has defined the following {localExperiments.length} steps to execute. Edit the config patch manually or use the AI input above.
+            Edit each experiment with schema-aware controls or switch to JSON for advanced changes.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {localExperiments.map((exp: any, idx: number) => {
-              const jsonString = exp._rawJsonString ?? JSON.stringify(exp.config_patch, null, 2);
-              return (
-                <div key={idx} className={`rounded-lg border p-4 bg-card shadow-sm relative overflow-hidden ${exp._jsonError ? 'border-red-500' : ''}`}>
-                  
-                  <div className="absolute left-0 top-0 bottom-0 w-1 bg-primary/20"></div>
-
-                  <div className="flex items-center gap-2 mb-3 pl-2">
-                    <Badge className="bg-primary/10 text-primary hover:bg-primary/20">Step {idx + 1}</Badge>
-                    <span className="font-semibold">{exp.name}</span>
-                  </div>
-                  
-                  <div className="pl-2">
-                    <p className="text-sm text-foreground/90 mb-4">{exp.plan_summary}</p>
-                    
-                    <div className="space-y-1">
-                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Configuration Parameters</p>
-                      <Textarea 
-                        className={`font-mono text-xs min-h-[120px] bg-muted/50 ${exp._jsonError ? 'focus-visible:ring-red-500' : ''}`}
-                        value={jsonString}
-                        onChange={(e) => handleConfigChange(idx, e.target.value)}
-                        disabled={isBusy}
-                      />
-                      {exp._jsonError && <p className="text-[10px] text-red-500 font-medium mt-1">Invalid JSON format</p>}
-                    </div>
-                  </div>
-                </div>
-              )
-            })}
+            {localExperiments.map((exp, idx) => (
+              <ExperimentCard
+                key={`${exp.name}-${idx}`}
+                disabled={isBusy}
+                experiment={exp}
+                index={idx}
+                schema={configSchema}
+                fields={schemaFields}
+                onConfigChange={(path, value) => handleFormConfigChange(idx, path, value)}
+                onJsonChange={(text) => handleJsonConfigChange(idx, text)}
+                onTabChange={(tab) => patchExperiment(idx, { _activeTab: tab })}
+              />
+            ))}
           </div>
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+function parseOptionalNumber(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim().length > 0) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return undefined;
+}
+
+function ExperimentCard({
+  disabled,
+  experiment,
+  fields,
+  index,
+  onConfigChange,
+  onJsonChange,
+  onTabChange,
+  schema,
+}: {
+  disabled: boolean;
+  experiment: LocalExperiment;
+  fields: AgentSchemaField[];
+  index: number;
+  onConfigChange: (path: string, value: unknown) => void;
+  onJsonChange: (text: string) => void;
+  onTabChange: (tab: "form" | "json") => void;
+  schema: Record<string, unknown> | null;
+}) {
+  const fullConfig = buildAgentConfig(schema, experiment.config_patch ?? {});
+  const visibleFields = fields.filter((field) => checkDependency(fullConfig, field.definition.depends_on));
+  const grouped = visibleFields.reduce<Record<string, AgentSchemaField[]>>((acc, field) => {
+    const section = field.section;
+    acc[section] = [...(acc[section] ?? []), field];
+    return acc;
+  }, {});
+  const jsonString = experiment._rawJsonString ?? JSON.stringify(experiment.config_patch ?? {}, null, 2);
+  const disabledErrors = validateDisabledOptions(fullConfig, schema);
+  const summaryFields = fields
+    .filter((field) => field.featured)
+    .map((field) => ({ field, value: getValueByPath(fullConfig, field.path) }))
+    .filter((item) => item.value !== undefined)
+    .slice(0, 8);
+
+  return (
+    <div className={`rounded-lg border p-4 bg-card shadow-sm relative overflow-hidden ${experiment._jsonError || disabledErrors.length ? "border-red-500" : ""}`}>
+      <div className="absolute left-0 top-0 bottom-0 w-1 bg-primary/20" />
+
+      <div className="flex flex-wrap items-center gap-2 mb-3 pl-2">
+        <Badge className="bg-primary/10 text-primary hover:bg-primary/20">Step {index + 1}</Badge>
+        <span className="font-semibold">{experiment.name}</span>
+      </div>
+
+      <div className="pl-2 space-y-4">
+        <p className="text-sm text-foreground/90">{experiment.plan_summary}</p>
+
+        <div className="flex flex-wrap gap-2">
+          {summaryFields.map(({ field, value }) => (
+            <Badge key={field.path} variant="outline" className="bg-muted/30">
+              {field.label}: <span className="ml-1 font-mono">{formatFieldValue(value)}</span>
+            </Badge>
+          ))}
+        </div>
+
+        {disabledErrors.length > 0 && (
+          <p className="rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+            {disabledErrors[0]}
+          </p>
+        )}
+
+        <Tabs value={experiment._activeTab ?? "form"} onValueChange={(value) => onTabChange(value as "form" | "json")}>
+          <TabsList>
+            <TabsTrigger value="form">Form</TabsTrigger>
+            <TabsTrigger value="json">JSON</TabsTrigger>
+          </TabsList>
+          <TabsContent value="form">
+            <div className="grid gap-3 lg:grid-cols-2">
+              {Object.entries(grouped).map(([section, sectionFields]) => (
+                <div key={section} className="space-y-2 rounded-md border border-border/70 bg-muted/20 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{section}</p>
+                  <div className="space-y-2">
+                    {sectionFields.map((field) => (
+                      <SchemaFieldControl
+                        key={field.path}
+                        disabled={disabled}
+                        field={field}
+                        value={getValueByPath(fullConfig, field.path) ?? field.defaultValue}
+                        onChange={(value) => onConfigChange(field.path, coerceFieldValue(field, value))}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </TabsContent>
+          <TabsContent value="json">
+            <div className="space-y-1">
+              <Textarea
+                className={`font-mono text-xs min-h-[220px] bg-muted/50 ${experiment._jsonError ? "focus-visible:ring-red-500" : ""}`}
+                value={jsonString}
+                onChange={(e) => onJsonChange(e.target.value)}
+                disabled={disabled}
+              />
+              {experiment._jsonError && <p className="text-[10px] text-red-500 font-medium mt-1">Invalid JSON format</p>}
+            </div>
+          </TabsContent>
+        </Tabs>
+      </div>
+    </div>
+  );
+}
+
+function SchemaFieldControl({
+  disabled,
+  field,
+  value,
+  onChange,
+}: {
+  disabled: boolean;
+  field: AgentSchemaField;
+  value: unknown;
+  onChange: (value: unknown) => void;
+}) {
+  return (
+    <div className="space-y-1 rounded-md border border-border/70 bg-background/60 p-2">
+      <p className="text-xs text-muted-foreground">{field.label}</p>
+      {field.type === "select" && (
+        <Select value={String(value ?? "")} onValueChange={onChange} disabled={disabled}>
+          <SelectTrigger className="font-mono">
+            <SelectValue placeholder="Select option" />
+          </SelectTrigger>
+          <SelectContent>
+            {field.options.map((option) => {
+              const meta = optionMeta(field.definition, option);
+              return (
+                <SelectItem
+                  key={`${field.path}-${String(option)}`}
+                  value={String(option)}
+                  disabled={optionDisabled(field.definition, option)}
+                  className="font-mono"
+                >
+                  <span className="flex items-center gap-2">
+                    {optionLabel(field.definition, option)}
+                    {typeof meta.badge === "string" && <span className="text-[10px] text-amber-400">{meta.badge}</span>}
+                  </span>
+                </SelectItem>
+              );
+            })}
+          </SelectContent>
+        </Select>
+      )}
+      {field.type === "number" && (
+        <NumberStepper
+          value={Number(value ?? field.defaultValue ?? 0)}
+          min={parseOptionalNumber(field.definition.min)}
+          max={parseOptionalNumber(field.definition.max)}
+          step={parseOptionalNumber(field.definition.step) ?? 1}
+          onValueChange={onChange}
+          disabled={disabled}
+          inputClassName="font-mono"
+        />
+      )}
+      {field.type === "bool" && (
+        <div className="flex h-10 items-center justify-between rounded-md border border-input bg-background/40 px-3">
+          <span className="text-sm">{formatFieldValue(value)}</span>
+          <Switch checked={Boolean(value)} onCheckedChange={onChange} disabled={disabled} />
+        </div>
+      )}
+      {field.type !== "select" && field.type !== "number" && field.type !== "bool" && (
+        <Input
+          className="font-mono"
+          disabled={disabled}
+          value={formatFieldValue(value)}
+          onChange={(event) => onChange(event.target.value)}
+        />
+      )}
     </div>
   );
 }

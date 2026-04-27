@@ -78,7 +78,7 @@ export function SchemaConfigDialog({
 
     return Object.entries(schema)
       .filter(([key, rawValue]) => {
-        if (key === "role" || key === "depends_on" || key === "hidden") return false;
+        if (key === "role" || key === "depends_on" || key === "hidden" || key === "ui") return false;
         if (!isRecord(rawValue) || isFieldDefinition(rawValue)) return false;
 
         const roleTag = typeof rawValue.role === "string" ? rawValue.role : null;

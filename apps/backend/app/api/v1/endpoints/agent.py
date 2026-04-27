@@ -27,6 +27,7 @@ from app.schemas.simulation import SimulationRunMetricsResponse
 from app.services.agent import AgentExperimentRunService, AgentExperimentService, AgentOptimizationHistoryService, AgentRuntimeService, AgentState
 from app.services.agent.graph import FederatedAgentGraphBuilder
 from app.services.agent.objectives import AgentOptimizationObjective, resolve_objective
+from app.services.agent.planning import build_schema_prompt_context, dumps_for_prompt
 from app.services.llm import LLMRegistry, LLMService
 from app.schemas.agent import AgentPlanPreviewRequest, AgentPlanPreviewResponse, ExperimentPlanPreview, AgentPlanReviseRequest
 import uuid
@@ -47,6 +48,17 @@ async def list_agent_models() -> AgentModelsResponse:
         models=LLMRegistry.get_all_names(),
         default_model=LLMRegistry.get_default_name(),
     )
+
+
+@agent_router.get(
+    "/config/schema",
+    response_model=dict,
+    status_code=status.HTTP_200_OK,
+    summary="Get Agent config schema",
+)
+async def get_agent_config_schema() -> dict:
+    """Return the schema used by Agent planning and editing UI."""
+    return AgentExperimentService.get_config_schema()
 
 
 def _build_experiments(history: list) -> list[AgentExperimentSummary]:
@@ -147,6 +159,7 @@ def _build_progress_response(snapshot: dict) -> AgentOptimizeProgressResponse:
         best_metrics=best_metrics,
         experiments=_build_experiments(snapshot.get("experiments", [])),
         draft_experiments=snapshot.get("draft_experiments", []),
+        config_constraints=snapshot.get("config_constraints", {}),
         summary_text=snapshot.get("summary_text"),
         error_message=snapshot.get("error_message"),
         created_at=snapshot.get("created_at"),
@@ -222,6 +235,7 @@ async def get_optimization_job(
     snapshot.setdefault("current_iteration", job.current_iteration)
     snapshot.setdefault("completed_iterations", job.completed_iterations)
     snapshot.setdefault("experiments", [])
+    snapshot.setdefault("config_constraints", {})
     snapshot.setdefault("created_at", job.created_at)
     snapshot.setdefault("updated_at", job.updated_at)
     snapshot.setdefault("finished_at", job.finished_at)
@@ -248,6 +262,7 @@ async def start_optimization(
         model_name=payload.model_name,
         objective=payload.objective,
         planned_experiments=payload.planned_experiments,
+        config_constraints=payload.config_constraints,
     )
     return _build_progress_response(snapshot)
 
@@ -304,6 +319,7 @@ async def optimize(
         job_name=payload.job_name,
         objective=payload.objective,
         resolved_objective=resolved_objective,
+        config_constraints=payload.config_constraints,
     )
 
     # LangGraph executor expects a dict-like object; dataclass is fine.
@@ -497,6 +513,7 @@ async def generate_plan_preview(
         max_iterations=10, 
         objective=AgentOptimizationObjective.AUTO,
         resolved_objective=AgentOptimizationObjective.ACCURACY,
+        config_constraints=payload.config_constraints,
     )
     
     # Call the graph's parse node directly to get the LLM result
@@ -528,6 +545,9 @@ async def generate_plan_preview(
             "goal": payload.goal,
             "job_name": payload.job_name,
             "status": "pending_review",
+            "system_mode": payload.system_mode,
+            "model_name": payload.model_name,
+            "config_constraints": payload.config_constraints,
             "experiments": [],
             "draft_experiments": [p.model_dump() for p in previews]
         }
@@ -537,7 +557,8 @@ async def generate_plan_preview(
         optimization_job_id=job.id,
         goal=payload.goal,
         experiments=previews,
-        system_mode=payload.system_mode
+        system_mode=payload.system_mode,
+        config_constraints=payload.config_constraints,
     )
 
 @agent_router.post(
@@ -560,6 +581,7 @@ async def revise_plan_preview(
 
     snapshot = job.snapshot_json
     current_experiments = snapshot.get("draft_experiments", [])
+    config_constraints = snapshot.get("config_constraints", {})
     if not current_experiments:
         raise HTTPException(status_code=400, detail="No draft experiments found to revise.")
 
@@ -567,12 +589,16 @@ async def revise_plan_preview(
         "You are an AI assistant managing a Federated Learning experiment plan. "
         "The user wants to modify the current experiment configuration based on their feedback. "
         "Update the JSON configuration to reflect their request. "
+        "Respect the structured config constraints and do not use disabled future options. "
         "Respond ONLY with a valid JSON array of experiment objects, matching the original schema. "
         "Do not include any other text."
     )
+    schema_context = build_schema_prompt_context(AgentExperimentService.get_config_schema())
     
     input_text = (
         f"Current Plan (JSON):\n{json.dumps(current_experiments, indent=2)}\n\n"
+        f"Structured Config Constraints (JSON):\n{json.dumps(config_constraints, indent=2)}\n\n"
+        f"Schema Context (JSON):\n{dumps_for_prompt(schema_context)}\n\n"
         f"User Modification Request:\n{payload.instruction}\n\n"
         "Please output the updated JSON array of experiments:"
     )
@@ -608,5 +634,6 @@ async def revise_plan_preview(
         optimization_job_id=job.id,
         goal=snapshot.get("goal", ""),
         experiments=[ExperimentPlanPreview.model_validate(exp) for exp in updated_experiments],
-        system_mode=snapshot.get("system_mode", "simulation")
+        system_mode=snapshot.get("system_mode", "simulation"),
+        config_constraints=config_constraints,
     )

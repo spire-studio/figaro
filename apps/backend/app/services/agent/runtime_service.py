@@ -40,6 +40,7 @@ class AgentRuntimeService:
         job_name: str | None,
         objective: AgentOptimizationObjective,
         planned_experiments: list[dict[str, Any]],
+        config_constraints: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """
         Create a background experiment task and return its initial snapshot.
@@ -67,6 +68,7 @@ class AgentRuntimeService:
             "best_config": None,
             "best_metrics": None,
             "experiments": [],
+            "config_constraints": copy.deepcopy(config_constraints or {}),
             "summary_text": None,
             "error_message": None,
             "created_at": now,
@@ -100,6 +102,7 @@ class AgentRuntimeService:
                     objective=objective,
                     resolved_objective=resolved_objective,
                     planned_experiments=planned_experiments,
+                    config_constraints=config_constraints or {},
                 )
             )
             task.add_done_callback(lambda finished_task, current_task_id=task_id: self._on_task_done(current_task_id, finished_task))
@@ -127,6 +130,7 @@ class AgentRuntimeService:
         objective: AgentOptimizationObjective,
         resolved_objective: AgentOptimizationObjective,
         planned_experiments: list[dict[str, Any]] | None = None,
+        config_constraints: dict[str, Any] | None = None,
     ) -> None:
         """Execute one experiment task in the background."""
         logger.info("agent_task_started task_id=%s", task_id)
@@ -142,6 +146,7 @@ class AgentRuntimeService:
                 resolved_objective=resolved_objective,
                 phase="parsing",
                 planned_experiments=planned_experiments,
+                config_constraints=copy.deepcopy(config_constraints or {}),
             )
             await self._update_from_state(task_id, initial_state, status="running")
             async with AsyncSessionLocal() as session:
@@ -263,6 +268,7 @@ class AgentRuntimeService:
                     "best_config": None,
                     "best_metrics": None,
                     "experiments": [self._serialize_record(record) for record in state.history],
+                    "config_constraints": copy.deepcopy(state.config_constraints),
                     "summary_text": state.summary,
                     "error_message": state.error_message,
                     "updated_at": utcnow(),
