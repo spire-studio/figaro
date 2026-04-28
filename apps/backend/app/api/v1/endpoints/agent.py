@@ -99,13 +99,55 @@ def _build_experiments(history: list) -> list[AgentExperimentSummary]:
     return experiments
 
 
+def _record_value(record, key: str, default=None):
+    if hasattr(record, key):
+        return getattr(record, key)
+    if isinstance(record, dict):
+        return record.get(key, default)
+    return default
+
+
+def _best_record(history: list):
+    best = None
+    best_score = None
+    for record in history:
+        score = _record_value(record, "score")
+        if score is None:
+            continue
+        try:
+            numeric_score = float(score)
+        except (TypeError, ValueError):
+            continue
+        if best_score is None or numeric_score > best_score:
+            best = record
+            best_score = numeric_score
+    return best
+
+
+def _derive_best_payload(snapshot: dict) -> tuple[dict | None, dict | None]:
+    best_config = snapshot.get("best_config")
+    best_metrics = snapshot.get("best_metrics")
+    if best_config is not None and best_metrics is not None:
+        return best_config, best_metrics
+
+    record = _best_record(snapshot.get("experiments", []))
+    if record is None:
+        return best_config, best_metrics
+    if best_config is None:
+        best_config = _record_value(record, "config")
+    if best_metrics is None:
+        best_metrics = _record_value(record, "metrics")
+    return best_config, best_metrics
+
+
 def _build_progress_response(snapshot: dict) -> AgentOptimizeProgressResponse:
     """
     Convert a runtime snapshot into the progress response schema.
     """
+    best_config_payload, best_metrics_payload = _derive_best_payload(snapshot)
     best_metrics = (
-        SimulationRunMetricsResponse.model_validate(snapshot["best_metrics"])
-        if snapshot.get("best_metrics") is not None
+        SimulationRunMetricsResponse.model_validate(best_metrics_payload)
+        if best_metrics_payload is not None
         else None
     )
 
@@ -155,7 +197,7 @@ def _build_progress_response(snapshot: dict) -> AgentOptimizeProgressResponse:
         completed_iterations=snapshot.get("completed_iterations", 0),
         current_plan=current_plan,
         current_experiment=current_experiment,
-        best_config=snapshot.get("best_config"),
+        best_config=best_config_payload,
         best_metrics=best_metrics,
         experiments=_build_experiments(snapshot.get("experiments", [])),
         draft_experiments=snapshot.get("draft_experiments", []),
@@ -334,6 +376,12 @@ async def optimize(
         final_state = AgentState(**raw_state)  # type: ignore[arg-type]
 
     experiments = _build_experiments(final_state.history)
+    best = _best_record(final_state.history)
+    best_metrics = (
+        SimulationRunMetricsResponse.model_validate(_record_value(best, "metrics"))
+        if best is not None and _record_value(best, "metrics") is not None
+        else None
+    )
 
     return AgentOptimizeResponse(
         goal=final_state.goal,
@@ -342,8 +390,8 @@ async def optimize(
         objective=final_state.objective,
         resolved_objective=final_state.resolved_objective,
         iterations_executed=final_state.iteration,
-        best_config=None,
-        best_metrics=None,
+        best_config=_record_value(best, "config") if best is not None else None,
+        best_metrics=best_metrics,
         experiments=experiments,
         summary_text=final_state.summary,
     )

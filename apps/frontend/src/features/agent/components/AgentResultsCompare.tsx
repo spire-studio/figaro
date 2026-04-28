@@ -1,22 +1,87 @@
-import { useEffect, useState } from "react";
-import { History, Bot, Activity, CheckCircle2, Trophy, ArrowRight, Target, Calendar } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { History, Bot, Activity, Trophy, ArrowRight, Target, Calendar, FileJson, Settings2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../../../components/ui/card";
 import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
 import { Separator } from "../../../components/ui/separator";
 import { MiniLineChart } from "../../simulation/components/MiniLineChart";
+import { getValueByPath, isRecord } from "../../simulation/utils";
 import { fmt } from "../../../lib/time";
 import type { AgentPageProps } from "../../../pages/types";
 import { baseUrl } from "../../../../src/api/client";
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { collectAgentSchemaFields, formatFieldValue, optionLabel, type AgentSchemaField } from "../schema";
 
 const CHART_COLORS = [
   "hsl(var(--primary))", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#06b6d4"
 ];
 
+const FALLBACK_CONFIG_FIELDS = [
+  { path: "dataset.name", label: "Dataset" },
+  { path: "dataset.distribution", label: "Distribution" },
+  { path: "dataset.alpha", label: "Alpha" },
+  { path: "model.name", label: "Model" },
+  { path: "federated.aggregation", label: "Aggregation" },
+  { path: "federated.num_clients", label: "Clients" },
+  { path: "federated.num_rounds", label: "Rounds" },
+  { path: "federated.local_epochs", label: "Local Epochs" },
+  { path: "federated.learning_rate", label: "Learning Rate" },
+];
+
+type ConfigSummaryItem = {
+  path: string;
+  label: string;
+  value: string;
+};
+
+function asConfigRecord(value: unknown): Record<string, unknown> | null {
+  return isRecord(value) ? value : null;
+}
+
+function summarizeSchemaField(field: AgentSchemaField, config: Record<string, unknown>): ConfigSummaryItem | null {
+  const value = getValueByPath(config, field.path);
+  if (value === undefined) return null;
+  return {
+    path: field.path,
+    label: field.label,
+    value: field.type === "select" ? optionLabel(field.definition, value) : formatFieldValue(value),
+  };
+}
+
+function summarizeFallbackField(
+  field: { path: string; label: string },
+  config: Record<string, unknown>,
+): ConfigSummaryItem | null {
+  const value = getValueByPath(config, field.path);
+  if (value === undefined) return null;
+  return {
+    path: field.path,
+    label: field.label,
+    value: formatFieldValue(value),
+  };
+}
+
+function buildConfigSummary(
+  config: Record<string, unknown> | null,
+  schema: Record<string, unknown> | null,
+): ConfigSummaryItem[] {
+  if (!config) return [];
+  const schemaItems = collectAgentSchemaFields(schema, { featuredOnly: true })
+    .map((field) => summarizeSchemaField(field, config))
+    .filter((item): item is ConfigSummaryItem => item !== null);
+
+  if (schemaItems.length > 0) {
+    return schemaItems;
+  }
+
+  return FALLBACK_CONFIG_FIELDS
+    .map((field) => summarizeFallbackField(field, config))
+    .filter((item): item is ConfigSummaryItem => item !== null);
+}
+
 export function AgentResultsCompare(props: AgentPageProps) {
-  const { historyJobs, selectedHistory, selectHistoryJob, setWorkflowStep } = props;
+  const { historyJobs, selectedHistory, selectHistoryJob, setWorkflowStep, configSchema } = props;
 
   const jobs = (historyJobs || []).filter((job: any) => job.status === "completed");
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
@@ -25,6 +90,15 @@ export function AgentResultsCompare(props: AgentPageProps) {
   const experiments = selectedHistory?.experiments || [];
   const bestExp = experiments.reduce((prev: any, curr: any) => 
     (curr.score || 0) > (prev?.score || 0) ? curr : prev, experiments[0] || null);
+  const bestConfig = asConfigRecord(selectedHistory?.best_config) ?? asConfigRecord(bestExp?.config);
+  const bestConfigSummary = useMemo(
+    () => buildConfigSummary(bestConfig, configSchema),
+    [bestConfig, configSchema],
+  );
+  const bestConfigJson = useMemo(
+    () => (bestConfig ? JSON.stringify(bestConfig, null, 2) : ""),
+    [bestConfig],
+  );
 
   useEffect(() => {
     if (bestExp) {
@@ -143,6 +217,45 @@ export function AgentResultsCompare(props: AgentPageProps) {
                   <p className="text-xs text-emerald-700/70 dark:text-emerald-400/70">
                     Experiment <strong>"{bestExp?.name}"</strong> yielded the highest accuracy.
                   </p>
+                  {bestConfig ? (
+                    <>
+                      <Separator className="my-4 bg-emerald-200/80 dark:bg-emerald-900/70" />
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-2 text-xs font-bold uppercase text-emerald-800/80 dark:text-emerald-300/80">
+                          <Settings2 className="h-3.5 w-3.5" />
+                          Configuration
+                        </div>
+                        {bestConfigSummary.length > 0 && (
+                          <div className="grid gap-2 sm:grid-cols-2">
+                            {bestConfigSummary.map((item) => (
+                              <div
+                                key={item.path}
+                                className="rounded-md border border-emerald-200/70 bg-background/75 px-3 py-2 dark:border-emerald-900/60 dark:bg-background/40"
+                              >
+                                <div className="text-[10px] font-semibold uppercase text-muted-foreground">
+                                  {item.label}
+                                </div>
+                                <div className="mt-1 truncate text-xs font-semibold text-foreground">
+                                  {item.value}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        <div className="rounded-md border border-emerald-200/70 bg-background/80 dark:border-emerald-900/60 dark:bg-background/40">
+                          <div className="flex items-center gap-2 border-b px-3 py-2 text-xs font-semibold text-emerald-800 dark:text-emerald-300">
+                            <FileJson className="h-3.5 w-3.5" />
+                            Full config
+                          </div>
+                          <pre className="max-h-64 overflow-auto p-3 text-[11px] leading-relaxed text-muted-foreground">{bestConfigJson}</pre>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <p className="mt-4 text-xs text-emerald-700/70 dark:text-emerald-400/70">
+                      Configuration is not available for this historical result.
+                    </p>
+                  )}
                 </CardContent>
               </Card>
 

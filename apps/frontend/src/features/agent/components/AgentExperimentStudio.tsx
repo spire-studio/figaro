@@ -94,9 +94,8 @@ export function AgentExperimentStudio(props: AgentPageProps) {
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <SlidersHorizontal className="h-4 w-4 text-primary" />
-                <p className="text-sm font-semibold">Schema constraints</p>
+                <p className="text-sm font-semibold">Default Config</p>
               </div>
-              <span className="text-xs text-muted-foreground">Sent as structured context</span>
             </div>
 
             {visibleFields.length === 0 && (
@@ -150,7 +149,7 @@ export function AgentExperimentStudio(props: AgentPageProps) {
         ) : (
           <>
             <Sparkles className="mr-2 h-5 w-5" />
-            Generate Experiment Plan <ArrowRight className="ml-2 h-5 w-5" />
+            Generate Plan <ArrowRight className="ml-2 h-5 w-5" />
           </>
         )}
       </Button>

@@ -95,6 +95,8 @@ def test_agent_optimize_endpoint_handles_agent_state_result(client, monkeypatch)
     assert payload["job_name"] == "opt-job-a"
     assert payload["iterations_executed"] == 2
     assert payload["experiments"][0]["run_id"] == "run-1"
+    assert payload["best_config"] == {"federated": {"num_clients": 10}}
+    assert payload["best_metrics"]["global_results"]["global_accuracy"] == [0.8]
     assert payload["summary_text"] == "done"
 
 
@@ -161,6 +163,8 @@ def test_agent_optimize_endpoint_handles_dict_result(client, monkeypatch):
     assert payload["resolved_objective"] == "accuracy"
     assert payload["iterations_executed"] == 1
     assert payload["experiments"][0]["job_id"] == 11
+    assert payload["best_config"] == {"federated": {"num_clients": 10}}
+    assert payload["best_metrics"]["global_results"]["global_accuracy"] == [0.88]
     assert payload["summary_text"] == "single-run"
 
 
@@ -309,6 +313,8 @@ def test_agent_optimize_progress_endpoint_returns_snapshot(client, monkeypatch):
     assert payload["resolved_objective"] == "accuracy"
     assert payload["completed_iterations"] == 2
     assert payload["experiments"][0]["job_id"] == 99
+    assert payload["best_config"] == {"federated": {"num_rounds": 20}}
+    assert payload["best_metrics"]["global_results"]["global_accuracy"] == [0.95]
 
 
 def test_agent_optimization_jobs_history_endpoints(client, monkeypatch):

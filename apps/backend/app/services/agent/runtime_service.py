@@ -243,6 +243,7 @@ class AgentRuntimeService:
     async def _update_from_state(self, task_id: str, state: AgentState, *, status: str) -> None:
         """Project AgentState into a serializable task snapshot."""
         latest_record = state.history[-1] if state.history else None
+        best_record = self._select_best_record(state.history)
         current_experiment = self._build_current_experiment(state, latest_record)
 
         snapshot_to_persist = None
@@ -265,8 +266,8 @@ class AgentRuntimeService:
                     "completed_iterations": len(state.history),
                     "current_plan": self._serialize_plan(state.current_plan),
                     "current_experiment": current_experiment,
-                    "best_config": None,
-                    "best_metrics": None,
+                    "best_config": copy.deepcopy(best_record.config) if best_record is not None else None,
+                    "best_metrics": copy.deepcopy(best_record.metrics) if best_record is not None else None,
                     "experiments": [self._serialize_record(record) for record in state.history],
                     "config_constraints": copy.deepcopy(state.config_constraints),
                     "summary_text": state.summary,
@@ -279,6 +280,14 @@ class AgentRuntimeService:
 
         if snapshot_to_persist is not None:
             await self._persist_snapshot(snapshot_to_persist)
+
+    @staticmethod
+    def _select_best_record(records: list[ExperimentRecord]) -> ExperimentRecord | None:
+        """Return the highest-scoring experiment record, if any."""
+        scored = [record for record in records if record.score is not None]
+        if not scored:
+            return None
+        return max(scored, key=lambda record: record.score or 0)
 
     @staticmethod
     def _build_current_experiment(
