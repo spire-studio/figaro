@@ -45,6 +45,10 @@ class AgentOptimizeRequest(BaseModel):
         default=None, 
         description="Explicit list of experiment patches to run, bypassing LLM parse."
     )
+    config_constraints: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Structured config constraints selected by the user before planning.",
+    )
 
 
 class AgentModelsResponse(BaseModel):
@@ -148,6 +152,7 @@ class AgentOptimizeProgressResponse(BaseModel):
     best_metrics: SimulationRunMetricsResponse | None = None
     experiments: list[AgentExperimentSummary] = Field(default_factory=list)
     draft_experiments: list[dict[str, Any]] = Field(default_factory=list)
+    config_constraints: dict[str, Any] = Field(default_factory=dict)
     summary_text: str | None = None
     error_message: str | None = None
     created_at: datetime | None = None
@@ -237,6 +242,7 @@ class AgentPlanPreviewRequest(BaseModel):
     job_name: str = Field(..., description="Name for the job group.")
     model_name: Optional[str] = None
     system_mode: str = "simulation"
+    config_constraints: dict[str, Any] = Field(default_factory=dict)
 
 class AgentPlanPreviewResponse(BaseModel):
     """Draft results returned to the frontend."""
@@ -244,6 +250,7 @@ class AgentPlanPreviewResponse(BaseModel):
     goal: str
     experiments: list[ExperimentPlanPreview]
     system_mode: str
+    config_constraints: dict[str, Any] = Field(default_factory=dict)
 
 class AgentPlanReviseRequest(BaseModel):
     """Payload for requesting a revision to an existing plan draft."""

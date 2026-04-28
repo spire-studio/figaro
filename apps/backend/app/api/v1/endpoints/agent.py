@@ -27,6 +27,7 @@ from app.schemas.simulation import SimulationRunMetricsResponse
 from app.services.agent import AgentExperimentRunService, AgentExperimentService, AgentOptimizationHistoryService, AgentRuntimeService, AgentState
 from app.services.agent.graph import FederatedAgentGraphBuilder
 from app.services.agent.objectives import AgentOptimizationObjective, resolve_objective
+from app.services.agent.planning import build_schema_prompt_context, dumps_for_prompt
 from app.services.llm import LLMRegistry, LLMService
 from app.schemas.agent import AgentPlanPreviewRequest, AgentPlanPreviewResponse, ExperimentPlanPreview, AgentPlanReviseRequest
 import uuid
@@ -47,6 +48,17 @@ async def list_agent_models() -> AgentModelsResponse:
         models=LLMRegistry.get_all_names(),
         default_model=LLMRegistry.get_default_name(),
     )
+
+
+@agent_router.get(
+    "/config/schema",
+    response_model=dict,
+    status_code=status.HTTP_200_OK,
+    summary="Get Agent config schema",
+)
+async def get_agent_config_schema() -> dict:
+    """Return the schema used by Agent planning and editing UI."""
+    return AgentExperimentService.get_config_schema()
 
 
 def _build_experiments(history: list) -> list[AgentExperimentSummary]:
@@ -87,13 +99,55 @@ def _build_experiments(history: list) -> list[AgentExperimentSummary]:
     return experiments
 
 
+def _record_value(record, key: str, default=None):
+    if hasattr(record, key):
+        return getattr(record, key)
+    if isinstance(record, dict):
+        return record.get(key, default)
+    return default
+
+
+def _best_record(history: list):
+    best = None
+    best_score = None
+    for record in history:
+        score = _record_value(record, "score")
+        if score is None:
+            continue
+        try:
+            numeric_score = float(score)
+        except (TypeError, ValueError):
+            continue
+        if best_score is None or numeric_score > best_score:
+            best = record
+            best_score = numeric_score
+    return best
+
+
+def _derive_best_payload(snapshot: dict) -> tuple[dict | None, dict | None]:
+    best_config = snapshot.get("best_config")
+    best_metrics = snapshot.get("best_metrics")
+    if best_config is not None and best_metrics is not None:
+        return best_config, best_metrics
+
+    record = _best_record(snapshot.get("experiments", []))
+    if record is None:
+        return best_config, best_metrics
+    if best_config is None:
+        best_config = _record_value(record, "config")
+    if best_metrics is None:
+        best_metrics = _record_value(record, "metrics")
+    return best_config, best_metrics
+
+
 def _build_progress_response(snapshot: dict) -> AgentOptimizeProgressResponse:
     """
     Convert a runtime snapshot into the progress response schema.
     """
+    best_config_payload, best_metrics_payload = _derive_best_payload(snapshot)
     best_metrics = (
-        SimulationRunMetricsResponse.model_validate(snapshot["best_metrics"])
-        if snapshot.get("best_metrics") is not None
+        SimulationRunMetricsResponse.model_validate(best_metrics_payload)
+        if best_metrics_payload is not None
         else None
     )
 
@@ -143,10 +197,11 @@ def _build_progress_response(snapshot: dict) -> AgentOptimizeProgressResponse:
         completed_iterations=snapshot.get("completed_iterations", 0),
         current_plan=current_plan,
         current_experiment=current_experiment,
-        best_config=snapshot.get("best_config"),
+        best_config=best_config_payload,
         best_metrics=best_metrics,
         experiments=_build_experiments(snapshot.get("experiments", [])),
         draft_experiments=snapshot.get("draft_experiments", []),
+        config_constraints=snapshot.get("config_constraints", {}),
         summary_text=snapshot.get("summary_text"),
         error_message=snapshot.get("error_message"),
         created_at=snapshot.get("created_at"),
@@ -222,6 +277,7 @@ async def get_optimization_job(
     snapshot.setdefault("current_iteration", job.current_iteration)
     snapshot.setdefault("completed_iterations", job.completed_iterations)
     snapshot.setdefault("experiments", [])
+    snapshot.setdefault("config_constraints", {})
     snapshot.setdefault("created_at", job.created_at)
     snapshot.setdefault("updated_at", job.updated_at)
     snapshot.setdefault("finished_at", job.finished_at)
@@ -248,6 +304,7 @@ async def start_optimization(
         model_name=payload.model_name,
         objective=payload.objective,
         planned_experiments=payload.planned_experiments,
+        config_constraints=payload.config_constraints,
     )
     return _build_progress_response(snapshot)
 
@@ -304,6 +361,7 @@ async def optimize(
         job_name=payload.job_name,
         objective=payload.objective,
         resolved_objective=resolved_objective,
+        config_constraints=payload.config_constraints,
     )
 
     # LangGraph executor expects a dict-like object; dataclass is fine.
@@ -318,6 +376,12 @@ async def optimize(
         final_state = AgentState(**raw_state)  # type: ignore[arg-type]
 
     experiments = _build_experiments(final_state.history)
+    best = _best_record(final_state.history)
+    best_metrics = (
+        SimulationRunMetricsResponse.model_validate(_record_value(best, "metrics"))
+        if best is not None and _record_value(best, "metrics") is not None
+        else None
+    )
 
     return AgentOptimizeResponse(
         goal=final_state.goal,
@@ -326,8 +390,8 @@ async def optimize(
         objective=final_state.objective,
         resolved_objective=final_state.resolved_objective,
         iterations_executed=final_state.iteration,
-        best_config=None,
-        best_metrics=None,
+        best_config=_record_value(best, "config") if best is not None else None,
+        best_metrics=best_metrics,
         experiments=experiments,
         summary_text=final_state.summary,
     )
@@ -497,6 +561,7 @@ async def generate_plan_preview(
         max_iterations=10, 
         objective=AgentOptimizationObjective.AUTO,
         resolved_objective=AgentOptimizationObjective.ACCURACY,
+        config_constraints=payload.config_constraints,
     )
     
     # Call the graph's parse node directly to get the LLM result
@@ -528,6 +593,9 @@ async def generate_plan_preview(
             "goal": payload.goal,
             "job_name": payload.job_name,
             "status": "pending_review",
+            "system_mode": payload.system_mode,
+            "model_name": payload.model_name,
+            "config_constraints": payload.config_constraints,
             "experiments": [],
             "draft_experiments": [p.model_dump() for p in previews]
         }
@@ -537,7 +605,8 @@ async def generate_plan_preview(
         optimization_job_id=job.id,
         goal=payload.goal,
         experiments=previews,
-        system_mode=payload.system_mode
+        system_mode=payload.system_mode,
+        config_constraints=payload.config_constraints,
     )
 
 @agent_router.post(
@@ -560,6 +629,7 @@ async def revise_plan_preview(
 
     snapshot = job.snapshot_json
     current_experiments = snapshot.get("draft_experiments", [])
+    config_constraints = snapshot.get("config_constraints", {})
     if not current_experiments:
         raise HTTPException(status_code=400, detail="No draft experiments found to revise.")
 
@@ -567,12 +637,16 @@ async def revise_plan_preview(
         "You are an AI assistant managing a Federated Learning experiment plan. "
         "The user wants to modify the current experiment configuration based on their feedback. "
         "Update the JSON configuration to reflect their request. "
+        "Respect the structured config constraints and do not use disabled future options. "
         "Respond ONLY with a valid JSON array of experiment objects, matching the original schema. "
         "Do not include any other text."
     )
+    schema_context = build_schema_prompt_context(AgentExperimentService.get_config_schema())
     
     input_text = (
         f"Current Plan (JSON):\n{json.dumps(current_experiments, indent=2)}\n\n"
+        f"Structured Config Constraints (JSON):\n{json.dumps(config_constraints, indent=2)}\n\n"
+        f"Schema Context (JSON):\n{dumps_for_prompt(schema_context)}\n\n"
         f"User Modification Request:\n{payload.instruction}\n\n"
         "Please output the updated JSON array of experiments:"
     )
@@ -608,5 +682,6 @@ async def revise_plan_preview(
         optimization_job_id=job.id,
         goal=snapshot.get("goal", ""),
         experiments=[ExperimentPlanPreview.model_validate(exp) for exp in updated_experiments],
-        system_mode=snapshot.get("system_mode", "simulation")
+        system_mode=snapshot.get("system_mode", "simulation"),
+        config_constraints=config_constraints,
     )

@@ -17,6 +17,18 @@ def _metrics_payload(accuracy: float) -> dict:
     }
 
 
+def test_agent_config_schema_endpoint_returns_ui_metadata(client):
+    response = client.get("/api/v1/agent/config/schema")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["model"]["name"]["options"] == ["CNN", "LeNet", "ResNet"]
+    aggregation_ui = payload["federated"]["aggregation"]["ui"]
+    assert aggregation_ui["featured"] is True
+    assert aggregation_ui["options"]["fedprox"]["disabled"] is True
+    assert aggregation_ui["options"]["scaffold"]["badge"] == "experimental"
+
+
 def test_agent_optimize_endpoint_handles_agent_state_result(client, monkeypatch):
     import app.api.v1.endpoints.agent as agent_module
 
@@ -83,6 +95,8 @@ def test_agent_optimize_endpoint_handles_agent_state_result(client, monkeypatch)
     assert payload["job_name"] == "opt-job-a"
     assert payload["iterations_executed"] == 2
     assert payload["experiments"][0]["run_id"] == "run-1"
+    assert payload["best_config"] == {"federated": {"num_clients": 10}}
+    assert payload["best_metrics"]["global_results"]["global_accuracy"] == [0.8]
     assert payload["summary_text"] == "done"
 
 
@@ -149,6 +163,8 @@ def test_agent_optimize_endpoint_handles_dict_result(client, monkeypatch):
     assert payload["resolved_objective"] == "accuracy"
     assert payload["iterations_executed"] == 1
     assert payload["experiments"][0]["job_id"] == 11
+    assert payload["best_config"] == {"federated": {"num_clients": 10}}
+    assert payload["best_metrics"]["global_results"]["global_accuracy"] == [0.88]
     assert payload["summary_text"] == "single-run"
 
 
@@ -156,13 +172,14 @@ def test_agent_optimize_start_endpoint_returns_live_progress(client, monkeypatch
     import app.api.v1.endpoints.agent as agent_module
 
     # ADD `planned_experiments` here 👇
-    async def _fake_start_optimization(*, goal, max_iterations, system_mode, model_name, job_name, objective, planned_experiments):
+    async def _fake_start_optimization(*, goal, max_iterations, system_mode, model_name, job_name, objective, planned_experiments, config_constraints):
         assert goal == "live optimize"
         assert max_iterations == 3
         assert system_mode == "simulation"
         assert model_name == "gpt-live"
         assert job_name == "opt-job-live"
         assert planned_experiments is None # Optional: verify the default value is passed
+        assert config_constraints == {}
         return {
             "task_id": "task-1",
             "status": "running",
@@ -296,6 +313,8 @@ def test_agent_optimize_progress_endpoint_returns_snapshot(client, monkeypatch):
     assert payload["resolved_objective"] == "accuracy"
     assert payload["completed_iterations"] == 2
     assert payload["experiments"][0]["job_id"] == 99
+    assert payload["best_config"] == {"federated": {"num_rounds": 20}}
+    assert payload["best_metrics"]["global_results"]["global_accuracy"] == [0.95]
 
 
 def test_agent_optimization_jobs_history_endpoints(client, monkeypatch):

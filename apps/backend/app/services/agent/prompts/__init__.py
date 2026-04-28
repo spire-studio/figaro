@@ -7,6 +7,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from app.services.agent.planning import dumps_for_prompt
 from app.services.agent.state import AgentState
 
 _PLAN_INSTRUCTIONS_PATH = Path(__file__).with_name("plan_instructions.txt")
@@ -33,13 +34,21 @@ def build_plan_prompt(
     state: AgentState,
     capabilities: dict[str, Any],
     base_config: dict[str, Any],
+    schema_context: dict[str, Any] | None = None,
+    config_constraints: dict[str, Any] | None = None,
 ) -> str:
     """Build the user prompt for the experiment-parsing LLM call."""
+    constraints = config_constraints if isinstance(config_constraints, dict) else {}
+    schema_payload = schema_context if isinstance(schema_context, dict) else {}
     return (
         f"Experiment request:\n{state.goal}\n\n"
         f"System mode: {state.system_mode}\n"
-        f"Capabilities: {capabilities}\n"
-        f"Default base config: {base_config}\n\n"
+        f"Runtime capabilities:\n{dumps_for_prompt(capabilities)}\n\n"
+        f"Schema context from config_schema.yaml:\n{dumps_for_prompt(schema_payload)}\n\n"
+        f"Default base config after applying user constraints:\n{dumps_for_prompt(base_config)}\n\n"
+        f"User-selected structured constraints:\n{dumps_for_prompt(constraints)}\n\n"
         "Parse the request into experiment configurations.\n"
+        "Every experiment must inherit the structured constraints unless the user's request explicitly changes them.\n"
+        "Use executable_options for select fields. Do not use disabled_options.\n"
         "Return ONLY a JSON object with plan_summary and experiments list, no commentary."
     )

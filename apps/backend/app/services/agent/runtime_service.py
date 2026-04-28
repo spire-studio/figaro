@@ -40,6 +40,7 @@ class AgentRuntimeService:
         job_name: str | None,
         objective: AgentOptimizationObjective,
         planned_experiments: list[dict[str, Any]],
+        config_constraints: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """
         Create a background experiment task and return its initial snapshot.
@@ -67,6 +68,7 @@ class AgentRuntimeService:
             "best_config": None,
             "best_metrics": None,
             "experiments": [],
+            "config_constraints": copy.deepcopy(config_constraints or {}),
             "summary_text": None,
             "error_message": None,
             "created_at": now,
@@ -100,6 +102,7 @@ class AgentRuntimeService:
                     objective=objective,
                     resolved_objective=resolved_objective,
                     planned_experiments=planned_experiments,
+                    config_constraints=config_constraints or {},
                 )
             )
             task.add_done_callback(lambda finished_task, current_task_id=task_id: self._on_task_done(current_task_id, finished_task))
@@ -127,6 +130,7 @@ class AgentRuntimeService:
         objective: AgentOptimizationObjective,
         resolved_objective: AgentOptimizationObjective,
         planned_experiments: list[dict[str, Any]] | None = None,
+        config_constraints: dict[str, Any] | None = None,
     ) -> None:
         """Execute one experiment task in the background."""
         logger.info("agent_task_started task_id=%s", task_id)
@@ -142,6 +146,7 @@ class AgentRuntimeService:
                 resolved_objective=resolved_objective,
                 phase="parsing",
                 planned_experiments=planned_experiments,
+                config_constraints=copy.deepcopy(config_constraints or {}),
             )
             await self._update_from_state(task_id, initial_state, status="running")
             async with AsyncSessionLocal() as session:
@@ -238,6 +243,7 @@ class AgentRuntimeService:
     async def _update_from_state(self, task_id: str, state: AgentState, *, status: str) -> None:
         """Project AgentState into a serializable task snapshot."""
         latest_record = state.history[-1] if state.history else None
+        best_record = self._select_best_record(state.history)
         current_experiment = self._build_current_experiment(state, latest_record)
 
         snapshot_to_persist = None
@@ -260,9 +266,10 @@ class AgentRuntimeService:
                     "completed_iterations": len(state.history),
                     "current_plan": self._serialize_plan(state.current_plan),
                     "current_experiment": current_experiment,
-                    "best_config": None,
-                    "best_metrics": None,
+                    "best_config": copy.deepcopy(best_record.config) if best_record is not None else None,
+                    "best_metrics": copy.deepcopy(best_record.metrics) if best_record is not None else None,
                     "experiments": [self._serialize_record(record) for record in state.history],
+                    "config_constraints": copy.deepcopy(state.config_constraints),
                     "summary_text": state.summary,
                     "error_message": state.error_message,
                     "updated_at": utcnow(),
@@ -273,6 +280,14 @@ class AgentRuntimeService:
 
         if snapshot_to_persist is not None:
             await self._persist_snapshot(snapshot_to_persist)
+
+    @staticmethod
+    def _select_best_record(records: list[ExperimentRecord]) -> ExperimentRecord | None:
+        """Return the highest-scoring experiment record, if any."""
+        scored = [record for record in records if record.score is not None]
+        if not scored:
+            return None
+        return max(scored, key=lambda record: record.score or 0)
 
     @staticmethod
     def _build_current_experiment(

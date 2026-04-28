@@ -29,6 +29,7 @@ export type SchemaNode = {
   role?: string;
   depends_on?: string;
   hidden?: boolean;
+  ui?: Record<string, unknown>;
   [key: string]: unknown;
 };
 
@@ -240,7 +241,7 @@ export function normalizeSchemaDefault(node: SchemaNode): unknown {
 export function initDefaultsFromSchema(schema: Record<string, unknown>): Record<string, unknown> {
   const output: Record<string, unknown> = {};
   for (const [key, definition] of Object.entries(schema)) {
-    if (key === "role" || key === "depends_on" || key === "hidden") continue;
+    if (key === "role" || key === "depends_on" || key === "hidden" || key === "ui") continue;
     if (!isRecord(definition)) continue;
 
     if (isFieldDefinition(definition)) {
@@ -268,7 +269,7 @@ export function deepMerge(base: Record<string, unknown>, override: Record<string
 export function buildConfigFromSchema(schema: Record<string, unknown>, properties: Record<string, unknown>): Record<string, unknown> {
   const output: Record<string, unknown> = {};
   for (const [key, definition] of Object.entries(schema)) {
-    if (key === "role" || key === "depends_on" || key === "hidden") continue;
+    if (key === "role" || key === "depends_on" || key === "hidden" || key === "ui") continue;
     if (!isRecord(definition)) continue;
 
     if (isFieldDefinition(definition)) {

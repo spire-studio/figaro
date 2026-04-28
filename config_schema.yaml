@@ -1,134 +1,259 @@
 dataset:
   role: "server"
+  ui:
+    label: "Dataset"
+    group: "Data"
   name:
     type: "select"
     options: ["CIFAR-10", "CIFAR-100", "MNIST", "Fashion-MNIST"]
     default: "CIFAR-10"
+    ui:
+      label: "Dataset"
+      featured: true
+      group: "Core"
+      prompt_hint: "Dataset to train and evaluate on."
   data_dir:
     type: "text"
     default: "./datasets"
+    ui:
+      label: "Data directory"
   distribution:
     type: "select"
     options: ["iid", "non_iid"]
     default: "non_iid"
+    ui:
+      label: "Data distribution"
+      featured: true
+      group: "Core"
+      prompt_hint: "Client data partitioning strategy."
   alpha:
     type: "number"
     min: 0.1
     max: 10.0
     step: 0.1
     default: 0.5
-    description: "Dirichlet分布参数"
+    description: "Dirichlet distribution parameter"
     depends_on: "dataset.distribution == non_iid"
+    ui:
+      label: "Dirichlet alpha"
+      featured: true
+      group: "Core"
+      prompt_hint: "Lower values create stronger non-IID heterogeneity."
   num_clients:
     type: "number"
     min: 1
     max: 100
     default: 2
     hidden: true
+    ui:
+      label: "Dataset client count"
 
 model:
   role: "server"
+  ui:
+    label: "Model"
+    group: "Model"
   name:
     type: "select"
     options: ["CNN", "LeNet", "ResNet"]
     default: "CNN"
+    ui:
+      label: "Model"
+      featured: true
+      group: "Core"
+      prompt_hint: "Neural network architecture for every client."
   input_shape:
     type: "list_int"
     default: [32, 32, 3]
+    ui:
+      label: "Input shape"
   num_classes:
     type: "number"
     default: 10
+    ui:
+      label: "Number of classes"
 
 federated:
   role: "server"
+  ui:
+    label: "Federated Training"
+    group: "Training"
   num_clients:
     type: "number"
     min: 1
     max: 100
     default: 3
     hidden: true
+    ui:
+      label: "Clients"
+      featured: true
+      agent_visible: true
+      group: "Core"
+      prompt_hint: "Total number of federated clients."
   num_rounds:
     type: "number"
     default: 10
+    ui:
+      label: "Rounds"
+      featured: true
+      group: "Core"
+      prompt_hint: "Number of global aggregation rounds."
   clients_per_round:
     type: "number"
     default: 2
+    ui:
+      label: "Clients per round"
+      featured: true
+      group: "Core"
+      prompt_hint: "Number of selected clients in each round."
   local_epochs:
     type: "number"
     default: 5
+    ui:
+      label: "Local epochs"
+      featured: true
+      group: "Core"
+      prompt_hint: "Training epochs per participating client."
   learning_rate:
     type: "number"
     step: 0.001
     default: 0.01
+    ui:
+      label: "Learning rate"
+      featured: true
+      group: "Core"
+      prompt_hint: "Optimizer learning rate for local training."
   aggregation:
     type: "select"
     options: ["fedavg", "fedprox", "scaffold"]
     default: "fedavg"
+    ui:
+      label: "Aggregation"
+      featured: true
+      group: "Core"
+      prompt_hint: "Server-side model aggregation strategy."
+      options:
+        fedavg:
+          label: "FedAvg"
+          description: "Executable default aggregation strategy."
+        fedprox:
+          label: "FedProx"
+          badge: "experimental"
+          disabled: true
+          description: "Future option; runtime implementation is not available yet."
+        scaffold:
+          label: "SCAFFOLD"
+          badge: "experimental"
+          disabled: true
+          description: "Future option; runtime implementation is not available yet."
   seed:
     type: "number"
     default: 42
     description: "Random seed for full reproducibility (model init, data split, client selection)"
+    ui:
+      label: "Seed"
+      prompt_hint: "Only vary this when the user asks for repeated runs or variance."
 
 compression:
   role: "server"
+  ui:
+    label: "Compression"
+    group: "Advanced"
   sparsification:
     enable:
       type: "bool"
       default: false
+      ui:
+        label: "Enable sparsification"
+        group: "Advanced"
     ratio:
       type: "number"
       default: 0.5
       min: 0
       max: 1.0
       depends_on: "compression.sparsification.enable == true"
+      ui:
+        label: "Top-K ratio"
+        group: "Advanced"
 
 privacy:
   role: "server"
+  ui:
+    label: "Privacy"
+    group: "Advanced"
   homomorphic_encryption:
     enable:
       type: "bool"
       default: false
+      ui:
+        label: "Enable CKKS"
+        group: "Advanced"
     poly_modulus_degree:
       type: "select"
       options: [4096, 8192, 16384]
       default: 8192
       depends_on: "privacy.homomorphic_encryption.enable == true"
+      ui:
+        label: "Polynomial modulus degree"
+        group: "Advanced"
 
 system:
   hidden: true
   role: "server"
+  ui:
+    label: "System"
   mode:
     type: "select"
     options: ["simulation", "distributed"]
     default: "distributed"
+    ui:
+      label: "Mode"
   node_role:
     type: "select"
     options: ["server", "client"]
     default: "server"
+    ui:
+      label: "Node role"
 
 distributed:
   role: "server"
+  ui:
+    label: "Distributed Runtime"
   server_ip:
     type: "text"
     default: "localhost"
     depends_on: "system.mode == distributed"
+    ui:
+      label: "Server IP"
   port:
     type: "number"
     default: 50052
     depends_on: "system.mode == distributed"
+    ui:
+      label: "gRPC port"
   client_id:
     type: "number"
     default: 0
     depends_on: "system.mode == distributed && system.node_role == client"
+    ui:
+      label: "Client ID"
 
 logging:
   role: "server"
+  ui:
+    label: "Logging"
   log_dir:
     type: "text"
     default: "./logs"
+    ui:
+      label: "Log directory"
   save_results:
     type: "bool"
     default: true
+    ui:
+      label: "Save results"
   results_dir:
     type: "text"
     default: "./results"
+    ui:
+      label: "Results directory"

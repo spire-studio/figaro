@@ -1,5 +1,10 @@
 from app.core.config import settings
-from app.services.agent.planning import build_initial_config, select_llm_model
+from app.services.agent.planning import (
+    build_initial_config,
+    build_schema_prompt_context,
+    collect_disabled_option_errors,
+    select_llm_model,
+)
 
 
 def test_select_llm_model_prefers_model_name(monkeypatch):
@@ -38,7 +43,29 @@ def test_build_initial_config_uses_schema_defaults():
 
 def test_build_initial_config_hardcoded_defaults_on_empty_schema():
     cfg = build_initial_config({})
-    assert cfg["dataset"]["name"] == "cifar10"
-    assert cfg["model"]["name"] == "cnn"
-    assert cfg["federated"]["num_clients"] == 10
-    assert cfg["federated"]["num_rounds"] == 20
+    assert cfg["dataset"]["name"] == "CIFAR-10"
+    assert cfg["model"]["name"] == "CNN"
+    assert cfg["federated"]["num_clients"] == 3
+    assert cfg["federated"]["num_rounds"] == 10
+
+
+def test_schema_prompt_context_marks_disabled_options():
+    schema = {
+        "federated": {
+            "aggregation": {
+                "type": "select",
+                "options": ["fedavg", "scaffold"],
+                "default": "fedavg",
+                "ui": {"options": {"scaffold": {"disabled": True}}},
+            }
+        }
+    }
+
+    context = build_schema_prompt_context(schema)
+    field = context["fields"][0]
+    assert field["path"] == "federated.aggregation"
+    assert field["executable_options"] == ["fedavg"]
+    assert field["disabled_options"] == ["scaffold"]
+
+    errors = collect_disabled_option_errors({"federated": {"aggregation": "scaffold"}}, schema)
+    assert errors == ["federated.aggregation='scaffold' is marked disabled in config_schema.yaml"]

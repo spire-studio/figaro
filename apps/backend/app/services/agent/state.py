@@ -104,3 +104,4 @@ class AgentState:
     summary: str | None = None
 
     planned_experiments: list[dict[str, Any]] | None = None
+    config_constraints: dict[str, Any] = field(default_factory=dict)

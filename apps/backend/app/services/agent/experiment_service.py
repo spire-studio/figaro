@@ -70,7 +70,7 @@ class AgentExperimentService:
     """Application service for agent experiment operations."""
 
     EXPERIMENT_NAME_CONFLICT_MESSAGE = "Experiment name already exists"
-    _SCHEMA_META_KEYS = {"role", "depends_on", "hidden"}
+    _SCHEMA_META_KEYS = {"role", "depends_on", "hidden", "ui"}
 
     def __init__(self, session: AsyncSession):
         self.session = session

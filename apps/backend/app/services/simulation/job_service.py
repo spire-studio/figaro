@@ -21,7 +21,7 @@ class SimulationJobService:
     """Application service for simulation job operations."""
 
     JOB_NAME_CONFLICT_MESSAGE = "Job name already exists"
-    _SCHEMA_META_KEYS = {"role", "depends_on", "hidden"}
+    _SCHEMA_META_KEYS = {"role", "depends_on", "hidden", "ui"}
 
 
     def __init__(self, session: AsyncSession):
