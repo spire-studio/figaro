@@ -22,7 +22,10 @@ def test_agent_config_schema_endpoint_returns_ui_metadata(client):
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["model"]["name"]["options"] == ["CNN", "LeNet", "ResNet"]
+    assert "Auto" in payload["model"]["name"]["options"]
+    assert "FedAvgCNN" in payload["model"]["name"]["options"]
+    assert "TextDNN" in payload["model"]["name"]["options"]
+    assert "CharLSTM" in payload["model"]["name"]["options"]
     aggregation_ui = payload["federated"]["aggregation"]["ui"]
     assert aggregation_ui["featured"] is True
     assert aggregation_ui["options"]["fedprox"]["disabled"] is True

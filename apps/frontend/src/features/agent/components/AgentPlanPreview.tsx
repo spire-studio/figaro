@@ -15,18 +15,23 @@ import { Textarea } from "../../../components/ui/textarea";
 import type { AgentPageProps } from "../../../pages/types";
 import { getValueByPath, isRecord } from "../../simulation/utils";
 import {
+  booleanDisabledForConfig,
+  booleanDisableReasonForConfig,
   buildAgentConfig,
   checkDependency,
   coerceFieldValue,
   collectAgentSchemaFields,
+  fieldCompatibilityHint,
   formatFieldValue,
-  optionDisabled,
+  optionDisableReasonForConfig,
+  optionDisabledForConfig,
   optionLabel,
   optionMeta,
   setConfigValue,
   validateDisabledOptions,
   type AgentSchemaField,
 } from "../schema";
+import { isModelCompatibleWithDataset } from "../../config/compatibility";
 
 type LocalExperiment = {
   name: string;
@@ -91,7 +96,14 @@ export function AgentPlanPreview(props: AgentPageProps) {
     setLocalExperiments((current) =>
       current.map((exp, idx) => {
         if (idx !== index) return exp;
-        const nextConfig = setConfigValue(exp.config_patch ?? {}, path, value);
+        let nextConfig = setConfigValue(exp.config_patch ?? {}, path, value);
+        if (path === "dataset.name") {
+          const fullConfig = buildAgentConfig(configSchema, nextConfig);
+          const currentModel = getValueByPath(fullConfig, "model.name");
+          if (!isModelCompatibleWithDataset(currentModel, String(value))) {
+            nextConfig = setConfigValue(nextConfig, "model.name", "Auto");
+          }
+        }
         return {
           ...exp,
           config_patch: nextConfig,
@@ -300,6 +312,7 @@ function ExperimentCard({
                     {sectionFields.map((field) => (
                       <SchemaFieldControl
                         key={field.path}
+                        config={fullConfig}
                         disabled={disabled}
                         field={field}
                         value={getValueByPath(fullConfig, field.path) ?? field.defaultValue}
@@ -329,16 +342,22 @@ function ExperimentCard({
 }
 
 function SchemaFieldControl({
+  config,
   disabled,
   field,
   value,
   onChange,
 }: {
+  config: Record<string, unknown>;
   disabled: boolean;
   field: AgentSchemaField;
   value: unknown;
   onChange: (value: unknown) => void;
 }) {
+  const compatibilityHint = fieldCompatibilityHint(field.path, config);
+  const boolDisabled = disabled || booleanDisabledForConfig(field.path, value, config);
+  const boolReason = booleanDisableReasonForConfig(field.path, value, config);
+
   return (
     <div className="space-y-1 rounded-md border border-border/70 bg-background/60 p-2">
       <p className="text-xs text-muted-foreground">{field.label}</p>
@@ -350,16 +369,21 @@ function SchemaFieldControl({
           <SelectContent>
             {field.options.map((option) => {
               const meta = optionMeta(field.definition, option);
+              const optionDisabled = optionDisabledForConfig(field.definition, option, field.path, config);
+              const reason = optionDisableReasonForConfig(field.definition, option, field.path, config);
               return (
                 <SelectItem
                   key={`${field.path}-${String(option)}`}
                   value={String(option)}
-                  disabled={optionDisabled(field.definition, option)}
+                  disabled={optionDisabled}
                   className="font-mono"
                 >
-                  <span className="flex items-center gap-2">
-                    {optionLabel(field.definition, option)}
-                    {typeof meta.badge === "string" && <span className="text-[10px] text-amber-400">{meta.badge}</span>}
+                  <span className="flex flex-col gap-0.5">
+                    <span className="flex items-center gap-2">
+                      {optionLabel(field.definition, option)}
+                      {typeof meta.badge === "string" && <span className="text-[10px] text-amber-400">{meta.badge}</span>}
+                    </span>
+                    {reason && <span className="text-[10px] text-muted-foreground">{reason}</span>}
                   </span>
                 </SelectItem>
               );
@@ -381,7 +405,7 @@ function SchemaFieldControl({
       {field.type === "bool" && (
         <div className="flex h-10 items-center justify-between rounded-md border border-input bg-background/40 px-3">
           <span className="text-sm">{formatFieldValue(value)}</span>
-          <Switch checked={Boolean(value)} onCheckedChange={onChange} disabled={disabled} />
+          <Switch checked={Boolean(value)} onCheckedChange={onChange} disabled={boolDisabled} />
         </div>
       )}
       {field.type !== "select" && field.type !== "number" && field.type !== "bool" && (
@@ -392,6 +416,8 @@ function SchemaFieldControl({
           onChange={(event) => onChange(event.target.value)}
         />
       )}
+      {compatibilityHint && <p className="text-[11px] text-muted-foreground">{compatibilityHint}</p>}
+      {boolReason && <p className="text-[11px] text-muted-foreground">{boolReason}</p>}
     </div>
   );
 }

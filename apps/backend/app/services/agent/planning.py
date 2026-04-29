@@ -49,7 +49,7 @@ def build_initial_config(schema: dict[str, Any]) -> dict[str, Any]:
     if not schema:
         return {
             "dataset": {"name": "CIFAR-10", "distribution": "non_iid", "alpha": 0.5},
-            "model": {"name": "CNN"},
+            "model": {"name": "Auto"},
             "federated": {
                 "num_clients": 3,
                 "num_rounds": 10,
@@ -86,6 +86,13 @@ def deep_merge_config(base: dict[str, Any], override: dict[str, Any] | None) -> 
         else:
             merged[key] = copy.deepcopy(value)
     return merged
+
+
+def lock_structured_constraints(config: dict[str, Any], constraints: dict[str, Any] | None) -> dict[str, Any]:
+    """Apply user-selected structured constraints as final locked values."""
+    if not isinstance(constraints, dict) or not constraints:
+        return copy.deepcopy(config)
+    return deep_merge_config(config, constraints)
 
 
 def _option_ui(definition: dict[str, Any]) -> dict[str, Any]:

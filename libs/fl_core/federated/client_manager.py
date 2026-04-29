@@ -11,8 +11,10 @@ import time
 
 from .client import FederatedClient
 
-from fl_core.compression.sparsification import GlobalTopKSparsifier
+from fl_core.compression.sparsification import CompressionStrategy, GlobalTopKSparsifier
+from fl_core.privacy.differential_privacy import DifferentialPrivacyManager
 from fl_core.privacy.encryption import CKKSManager
+from fl_core.privacy.secure_aggregation import SecureAggregationMasker
 
 
 class ClientManager:
@@ -22,8 +24,10 @@ class ClientManager:
                  selection_strategy: str = "random",
                  max_workers: Optional[int] = None,
                  device: torch.device = None,
-                 sparsifier: Optional[GlobalTopKSparsifier] = None,
-                 ckks_manager: Optional[CKKSManager] = None):
+                 sparsifier: Optional[CompressionStrategy] = None,
+                 ckks_manager: Optional[CKKSManager] = None,
+                 dp_manager: Optional[DifferentialPrivacyManager] = None,
+                 secure_aggregation: Optional[SecureAggregationMasker] = None):
         # if not clients:
         #     raise ValueError("客户端列表不能为空")
         
@@ -47,6 +51,8 @@ class ClientManager:
 
         self.sparsifier = sparsifier
         self.ckks_manager = ckks_manager
+        self.dp_manager = dp_manager
+        self.secure_aggregation = secure_aggregation
         
         self.training_stats = {
             'total_rounds': 0,
@@ -353,7 +359,7 @@ class ClientManager:
     def get_client_models(self, selected_clients: List[FederatedClient],
                           global_model_params: Optional[Dict[str, torch.Tensor]] = None) -> List[Dict[str, torch.Tensor]]:
 
-        client_models = []
+        delta_models = []
 
         for client in selected_clients:
             try:
@@ -370,6 +376,9 @@ class ClientManager:
                 else:
                     delta = {k: v.to(self.device) for k, v in model_params.items()}
 
+                if self.dp_manager:
+                    delta = self.dp_manager.apply(delta)
+
                 payload = delta
 
                 if self.ckks_manager:
@@ -379,13 +388,16 @@ class ClientManager:
                     # 稀疏化
                     payload = self.sparsifier.sparsify(delta)
                 
-                client_models.append(payload)
+                delta_models.append(payload)
                 
             except Exception as e:
                 self.logger.error(f"获取客户端 {client.client_id} 模型参数失败: {str(e)}")
-                client_models.append({})
+                delta_models.append({})
         
-        return client_models
+        if self.secure_aggregation:
+            delta_models = self.secure_aggregation.mask_models(delta_models)
+
+        return delta_models
     
     def broadcast_model_to_clients(self, 
                                   selected_clients: List[FederatedClient],

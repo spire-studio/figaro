@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core import exceptions
 from app.models.simulation import SimulationJob, SimulationJobStatus, SimulationRunStatus
 from app.repositories.simulation import SimulationJobRepository, SimulationRunRepository
+from app.services.simulation.compatibility import canonicalize_runtime_config, validate_runtime_config_or_raise
 
 
 class SimulationJobService:
@@ -230,7 +231,9 @@ class SimulationJobService:
         system["mode"] = "simulation"
         system["node_role"] = "server"
 
+        canonicalize_runtime_config(merged)
         cls._validate_config_node(merged, schema, path_prefix="")
+        validate_runtime_config_or_raise(merged)
         return merged
 
     @classmethod

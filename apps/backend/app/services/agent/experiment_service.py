@@ -32,6 +32,7 @@ from app.models.agent import (
     AgentExperimentStatus,
 )
 from app.repositories.agent import AgentExperimentRepository
+from app.services.simulation.compatibility import canonicalize_runtime_config, validate_runtime_config_or_raise
 
 from app.core.logger import get_logger
 
@@ -235,7 +236,9 @@ class AgentExperimentService:
         system["mode"] = "simulation"
         system["node_role"] = "server"
 
+        canonicalize_runtime_config(merged)
         cls._validate_config_node(merged, schema, path_prefix="")
+        validate_runtime_config_or_raise(merged)
         return merged
 
     @classmethod

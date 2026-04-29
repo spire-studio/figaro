@@ -6,6 +6,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Switch } from "../../components/ui/switch";
 import type { NodeRole } from "../../pages/types";
 import { getValueByPath, isFieldDefinition, isRecord, normalizeListInt, type SchemaNode } from "../simulation/utils";
+import {
+  dynamicBooleanState,
+  dynamicOptionState,
+  fieldHint,
+  isModelCompatibleWithDataset,
+  optionLabel,
+  optionMeta,
+  staticOptionDisabled,
+} from "./compatibility";
 
 function checkDependency(properties: Record<string, unknown>, dependsOn?: string): boolean {
   if (!dependsOn) return true;
@@ -70,17 +79,22 @@ export function renderSchemaSection(
       const value = getValueByPath(properties, fullPath);
       if (definition.type === "bool") {
         const label = labelize(key);
+        const state = dynamicBooleanState(fullPath, value, properties);
         blocks.push(
           <div
             key={fullPath}
-            className="flex items-center justify-between rounded-md border border-border/70 bg-muted/25 px-3 py-2 text-sm"
+            className="space-y-1 rounded-md border border-border/70 bg-muted/25 px-3 py-2 text-sm"
           >
-            <span>{label}</span>
-            <Switch
-              checked={Boolean(value)}
-              onCheckedChange={(checked) => onChangeProperty(fullPath, checked)}
-              aria-label={label}
-            />
+            <div className="flex items-center justify-between">
+              <span>{label}</span>
+              <Switch
+                checked={Boolean(value)}
+                disabled={state.disabled}
+                onCheckedChange={(checked) => onChangeProperty(fullPath, checked)}
+                aria-label={label}
+              />
+            </div>
+            {state.reason && <p className="text-[11px] text-muted-foreground">{state.reason}</p>}
           </div>,
         );
         continue;
@@ -88,6 +102,7 @@ export function renderSchemaSection(
 
       if (definition.type === "select") {
         const options = Array.isArray(definition.options) ? definition.options : [];
+        const hint = fieldHint(fullPath, properties);
         blocks.push(
           <div key={fullPath} className="space-y-1 rounded-md border border-border/70 bg-muted/25 p-2">
             <p className="text-xs text-muted-foreground">{labelize(key)}</p>
@@ -95,20 +110,50 @@ export function renderSchemaSection(
               value={String(value ?? "")}
               onValueChange={(nextValue) => {
                 const matched = options.find((option) => String(option) === nextValue);
-                onChangeProperty(fullPath, matched ?? nextValue);
+                const next = matched ?? nextValue;
+                onChangeProperty(fullPath, next);
+                if (fullPath === "dataset.name") {
+                  const currentModel = getValueByPath(properties, "model.name");
+                  if (!isModelCompatibleWithDataset(currentModel, String(next))) {
+                    onChangeProperty("model.name", "Auto");
+                  }
+                }
               }}
             >
               <SelectTrigger className="font-mono">
                 <SelectValue placeholder="Select option" />
               </SelectTrigger>
               <SelectContent>
-                {options.map((option) => (
-                  <SelectItem key={`${fullPath}-${String(option)}`} value={String(option)} className="font-mono">
-                    {String(option)}
-                  </SelectItem>
-                ))}
+                {options.map((option) => {
+                  const staticDisabled = staticOptionDisabled(definition, option);
+                  const dynamicState = dynamicOptionState(fullPath, option, properties);
+                  const disabled = staticDisabled || dynamicState.disabled;
+                  const meta = optionMeta(definition, option);
+                  const reason = staticDisabled
+                    ? typeof meta.description === "string"
+                      ? meta.description
+                      : "Not executable yet."
+                    : dynamicState.reason;
+                  return (
+                    <SelectItem
+                      key={`${fullPath}-${String(option)}`}
+                      value={String(option)}
+                      disabled={disabled}
+                      className="font-mono"
+                    >
+                      <span className="flex flex-col gap-0.5">
+                        <span className="flex items-center gap-2">
+                          {optionLabel(definition, option)}
+                          {typeof meta.badge === "string" && <span className="text-[10px] text-amber-400">{meta.badge}</span>}
+                        </span>
+                        {reason && <span className="text-[10px] text-muted-foreground">{reason}</span>}
+                      </span>
+                    </SelectItem>
+                  );
+                })}
               </SelectContent>
             </Select>
+            {hint && <p className="text-[11px] text-muted-foreground">{hint}</p>}
           </div>,
         );
         continue;

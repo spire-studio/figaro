@@ -117,7 +117,7 @@ class DistributedConfigService:
         """
         output: dict[str, Any] = {}
         for key, raw_definition in schema.items():
-            if key in {"role", "depends_on", "hidden"}:
+            if key in {"role", "depends_on", "hidden", "ui"}:
                 continue
             if not isinstance(raw_definition, dict):
                 continue

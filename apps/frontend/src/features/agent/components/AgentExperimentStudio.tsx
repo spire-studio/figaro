@@ -12,17 +12,22 @@ import { Textarea } from "../../../components/ui/textarea";
 import type { AgentPageProps } from "../../../pages/types";
 import { getValueByPath } from "../../simulation/utils";
 import {
+  booleanDisabledForConfig,
+  booleanDisableReasonForConfig,
   buildAgentConfig,
   checkDependency,
   coerceFieldValue,
   collectAgentSchemaFields,
+  fieldCompatibilityHint,
   formatFieldValue,
-  optionDisabled,
+  optionDisableReasonForConfig,
+  optionDisabledForConfig,
   optionLabel,
   optionMeta,
   selectedConstraintChips,
   type AgentSchemaField,
 } from "../schema";
+import { isModelCompatibleWithDataset } from "../../config/compatibility";
 
 export function AgentExperimentStudio(props: AgentPageProps) {
   const {
@@ -106,9 +111,19 @@ export function AgentExperimentStudio(props: AgentPageProps) {
                 {visibleFields.map((field) => (
                   <ConstraintField
                     key={field.path}
+                    config={effectiveConfig}
                     field={field}
                     value={getValueByPath(configConstraints, field.path) ?? field.defaultValue}
-                    onChange={(value) => setConfigConstraint(field.path, coerceFieldValue(field, value))}
+                    onChange={(value) => {
+                      const coerced = coerceFieldValue(field, value);
+                      setConfigConstraint(field.path, coerced);
+                      if (field.path === "dataset.name") {
+                        const currentModel = getValueByPath(effectiveConfig, "model.name");
+                        if (!isModelCompatibleWithDataset(currentModel, String(coerced))) {
+                          setConfigConstraint("model.name", "Auto");
+                        }
+                      }
+                    }}
                   />
                 ))}
               </div>
@@ -167,10 +182,12 @@ function parseOptionalNumber(value: unknown): number | undefined {
 }
 
 function ConstraintField({
+  config,
   field,
   value,
   onChange,
 }: {
+  config: Record<string, unknown>;
   field: AgentSchemaField;
   value: unknown;
   onChange: (value: unknown) => void;
@@ -178,6 +195,9 @@ function ConstraintField({
   const hint = field.definition.ui && typeof field.definition.ui.prompt_hint === "string"
     ? field.definition.ui.prompt_hint
     : null;
+  const compatibilityHint = fieldCompatibilityHint(field.path, config);
+  const boolDisabled = booleanDisabledForConfig(field.path, value, config);
+  const boolReason = booleanDisableReasonForConfig(field.path, value, config);
 
   return (
     <div className="space-y-1 rounded-md border border-border/70 bg-background/60 p-3">
@@ -193,16 +213,21 @@ function ConstraintField({
           <SelectContent>
             {field.options.map((option) => {
               const meta = optionMeta(field.definition, option);
+              const disabled = optionDisabledForConfig(field.definition, option, field.path, config);
+              const reason = optionDisableReasonForConfig(field.definition, option, field.path, config);
               return (
                 <SelectItem
                   key={`${field.path}-${String(option)}`}
                   value={String(option)}
-                  disabled={optionDisabled(field.definition, option)}
+                  disabled={disabled}
                   className="font-mono"
                 >
-                  <span className="flex items-center gap-2">
-                    {optionLabel(field.definition, option)}
-                    {typeof meta.badge === "string" && <span className="text-[10px] text-amber-400">{meta.badge}</span>}
+                  <span className="flex flex-col gap-0.5">
+                    <span className="flex items-center gap-2">
+                      {optionLabel(field.definition, option)}
+                      {typeof meta.badge === "string" && <span className="text-[10px] text-amber-400">{meta.badge}</span>}
+                    </span>
+                    {reason && <span className="text-[10px] text-muted-foreground">{reason}</span>}
                   </span>
                 </SelectItem>
               );
@@ -223,12 +248,14 @@ function ConstraintField({
       {field.type === "bool" && (
         <div className="flex h-10 items-center justify-between rounded-md border border-input bg-background/40 px-3">
           <span className="text-sm">{formatFieldValue(value)}</span>
-          <Switch checked={Boolean(value)} onCheckedChange={onChange} />
+          <Switch checked={Boolean(value)} onCheckedChange={onChange} disabled={boolDisabled} />
         </div>
       )}
       {field.type !== "select" && field.type !== "number" && field.type !== "bool" && (
         <Input className="font-mono" value={formatFieldValue(value)} onChange={(event) => onChange(event.target.value)} />
       )}
+      {compatibilityHint && <p className="text-[11px] text-muted-foreground">{compatibilityHint}</p>}
+      {boolReason && <p className="text-[11px] text-muted-foreground">{boolReason}</p>}
       {hint && <p className="text-[11px] text-muted-foreground">{hint}</p>}
     </div>
   );

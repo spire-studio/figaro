@@ -31,6 +31,7 @@ from .planning import (
     build_schema_prompt_context,
     collect_disabled_option_errors,
     deep_merge_config,
+    lock_structured_constraints,
     select_llm_model,
 )
 from .prompts import build_plan_prompt, build_plan_system_instructions
@@ -97,8 +98,12 @@ class FederatedAgentGraphBuilder:
                 raw_config = exp.get("config_patch", exp.get("config", {}))
                 if not isinstance(raw_config, dict):
                     raw_config = {}
+                merged = lock_structured_constraints(
+                    deep_merge_config(constrained_base, raw_config),
+                    state.config_constraints,
+                )
                 normalized = experiment_service.normalize_simulation_config(
-                    deep_merge_config(constrained_base, raw_config)
+                    merged
                 )
                 disabled_errors = collect_disabled_option_errors(normalized, schema)
                 if disabled_errors:
@@ -165,8 +170,12 @@ class FederatedAgentGraphBuilder:
                         patch_config = exp.get("config", {})
                         if not isinstance(patch_config, dict):
                             patch_config = {}
-                        # Merge with constrained base config and normalize.
-                        merged = deep_merge_config(constrained_base, patch_config)
+                        # Merge with constrained base config, then re-apply
+                        # structured controls so prompt drift cannot override them.
+                        merged = lock_structured_constraints(
+                            deep_merge_config(constrained_base, patch_config),
+                            state.config_constraints,
+                        )
                         try:
                             normalized = experiment_service.normalize_simulation_config(merged)
                             disabled_errors = collect_disabled_option_errors(normalized, schema)
@@ -232,7 +241,10 @@ class FederatedAgentGraphBuilder:
             state.iteration = idx + 1
 
             # -- Build config --
-            merged = deep_merge_config(base_config, plan.config_patch)
+            merged = lock_structured_constraints(
+                deep_merge_config(base_config, plan.config_patch),
+                state.config_constraints,
+            )
             config = experiment_service.normalize_simulation_config(merged)
             disabled_errors = collect_disabled_option_errors(config, schema)
             if disabled_errors:

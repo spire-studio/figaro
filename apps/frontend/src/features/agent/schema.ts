@@ -9,6 +9,14 @@ import {
   setValueByPath,
   type SchemaNode,
 } from "../simulation/utils";
+import {
+  dynamicBooleanState,
+  dynamicOptionState,
+  fieldHint,
+  optionLabel as compatibilityOptionLabel,
+  optionMeta as compatibilityOptionMeta,
+  staticOptionDisabled,
+} from "../config/compatibility";
 
 const META_KEYS = new Set(["role", "depends_on", "hidden", "ui"]);
 const AGENT_SECTIONS = new Set(["dataset", "model", "federated", "compression", "privacy"]);
@@ -44,19 +52,49 @@ export function fieldLabel(key: string, definition: SchemaNode): string {
 }
 
 export function optionMeta(definition: SchemaNode, option: unknown): Record<string, unknown> {
-  const options = fieldUi(definition).options;
-  if (!isRecord(options)) return {};
-  const meta = options[String(option)];
-  return isRecord(meta) ? meta : {};
+  return compatibilityOptionMeta(definition, option);
 }
 
 export function optionLabel(definition: SchemaNode, option: unknown): string {
-  const meta = optionMeta(definition, option);
-  return typeof meta.label === "string" && meta.label.trim() ? meta.label : String(option);
+  return compatibilityOptionLabel(definition, option);
 }
 
 export function optionDisabled(definition: SchemaNode, option: unknown): boolean {
-  return optionMeta(definition, option).disabled === true;
+  return staticOptionDisabled(definition, option);
+}
+
+export function optionDisabledForConfig(
+  definition: SchemaNode,
+  option: unknown,
+  path: string,
+  config: Record<string, unknown>,
+): boolean {
+  return optionDisabled(definition, option) || dynamicOptionState(path, option, config).disabled;
+}
+
+export function optionDisableReasonForConfig(
+  definition: SchemaNode,
+  option: unknown,
+  path: string,
+  config: Record<string, unknown>,
+): string | null {
+  const meta = optionMeta(definition, option);
+  if (optionDisabled(definition, option)) {
+    return typeof meta.description === "string" ? meta.description : "Not executable yet.";
+  }
+  return dynamicOptionState(path, option, config).reason ?? null;
+}
+
+export function booleanDisabledForConfig(path: string, value: unknown, config: Record<string, unknown>): boolean {
+  return dynamicBooleanState(path, value, config).disabled;
+}
+
+export function booleanDisableReasonForConfig(path: string, value: unknown, config: Record<string, unknown>): string | null {
+  return dynamicBooleanState(path, value, config).reason ?? null;
+}
+
+export function fieldCompatibilityHint(path: string, config: Record<string, unknown>): string | null {
+  return fieldHint(path, config);
 }
 
 function isAgentVisible(definition: SchemaNode): boolean {
@@ -175,8 +213,10 @@ export function validateDisabledOptions(config: Record<string, unknown>, schema:
   for (const field of collectAgentSchemaFields(schema, { featuredOnly: false })) {
     if (field.type !== "select") continue;
     const value = getValueByPath(config, field.path);
-    if (value !== undefined && optionDisabled(field.definition, value)) {
-      errors.push(`${field.label}: ${optionLabel(field.definition, value)} is experimental and not executable yet.`);
+    if (value !== undefined && optionDisabledForConfig(field.definition, value, field.path, config)) {
+      const reason = optionDisableReasonForConfig(field.definition, value, field.path, config);
+      const suffix = reason ? ` ${reason}` : " It is not compatible with the current configuration.";
+      errors.push(`${field.label}: ${optionLabel(field.definition, value)} is unavailable.${suffix}`);
     }
   }
   return errors;

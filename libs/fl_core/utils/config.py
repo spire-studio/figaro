@@ -2,6 +2,8 @@ import yaml
 import os
 from typing import Dict, Any
 
+from fl_core.simulation_registry import validate_training_combination
+
 
 class ConfigManager:
     
@@ -78,4 +80,8 @@ class ConfigManager:
             if param not in federated_config:
                 raise ValueError(f"联邦学习配置缺少{param}参数")
         
+        compatibility_errors = validate_training_combination(self.config)
+        if compatibility_errors:
+            raise ValueError("; ".join(compatibility_errors))
+
         return True

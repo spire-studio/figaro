@@ -14,7 +14,7 @@ import type { AgentPageProps, AgentWorkflowStep, AgentPlanDraft } from "../../pa
 import { toErrorMessage } from "../simulation/utils";
 import { removeValueByPath, setConfigValue } from "./schema";
 
-const DEFAULT_GOAL = "Compare CIFAR-10 non-IID with alpha=0.1, 0.3, 0.5";
+const DEFAULT_GOAL = "Compare non-IID alpha=0.1, 0.3, 0.5 on the selected dataset";
 const POLL_INTERVAL_MS = 1500;
 
 function makeDefaultJobName(): string {
@@ -277,7 +277,7 @@ export function useAgentController(): AgentPageProps {
 
   const presets = useMemo(
     () => [
-      "Compare CIFAR-10 non-IID with alpha=0.1, 0.3, 0.5",
+      "Compare non-IID alpha=0.1, 0.3, 0.5 on the selected dataset",
       "Compare 10 clients vs 20 clients with FedAvg",
       "Test training rounds 10, 20, 50 on accuracy",
     ],

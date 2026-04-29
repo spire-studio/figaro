@@ -27,7 +27,13 @@ from app.schemas.simulation import SimulationRunMetricsResponse
 from app.services.agent import AgentExperimentRunService, AgentExperimentService, AgentOptimizationHistoryService, AgentRuntimeService, AgentState
 from app.services.agent.graph import FederatedAgentGraphBuilder
 from app.services.agent.objectives import AgentOptimizationObjective, resolve_objective
-from app.services.agent.planning import build_schema_prompt_context, dumps_for_prompt
+from app.services.agent.planning import (
+    build_initial_config,
+    build_schema_prompt_context,
+    deep_merge_config,
+    dumps_for_prompt,
+    lock_structured_constraints,
+)
 from app.services.llm import LLMRegistry, LLMService
 from app.schemas.agent import AgentPlanPreviewRequest, AgentPlanPreviewResponse, ExperimentPlanPreview, AgentPlanReviseRequest
 import uuid
@@ -675,13 +681,38 @@ async def revise_plan_preview(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to parse LLM response: {str(e)}")
 
-    snapshot["draft_experiments"] = updated_experiments
+    experiment_service = AgentExperimentService(session)
+    schema = experiment_service.get_config_schema()
+    constrained_base = experiment_service.normalize_simulation_config(
+        deep_merge_config(build_initial_config(schema), config_constraints)
+    )
+    normalized_experiments = []
+    for idx, exp in enumerate(updated_experiments):
+        if not isinstance(exp, dict):
+            continue
+        raw_config = exp.get("config_patch", exp.get("config", {}))
+        if not isinstance(raw_config, dict):
+            raw_config = {}
+        merged = lock_structured_constraints(
+            deep_merge_config(constrained_base, raw_config),
+            config_constraints,
+        )
+        normalized_experiments.append(
+            {
+                **exp,
+                "name": exp.get("name", f"exp-{idx + 1}"),
+                "plan_summary": exp.get("plan_summary", snapshot.get("goal", "")),
+                "config_patch": experiment_service.normalize_simulation_config(merged),
+            }
+        )
+
+    snapshot["draft_experiments"] = normalized_experiments
     await history_service.update_job_snapshot(task_id=job.task_id, snapshot=snapshot)
 
     return AgentPlanPreviewResponse(
         optimization_job_id=job.id,
         goal=snapshot.get("goal", ""),
-        experiments=[ExperimentPlanPreview.model_validate(exp) for exp in updated_experiments],
+        experiments=[ExperimentPlanPreview.model_validate(exp) for exp in normalized_experiments],
         system_mode=snapshot.get("system_mode", "simulation"),
         config_constraints=config_constraints,
     )

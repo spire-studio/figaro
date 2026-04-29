@@ -1,0 +1,58 @@
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+from typing import Any
+
+from app.core import exceptions
+
+
+def _project_root() -> Path:
+    return Path(__file__).resolve().parents[5]
+
+
+def _ensure_fl_core_path() -> None:
+    libs_path = _project_root() / "libs"
+    if str(libs_path) not in sys.path:
+        sys.path.insert(0, str(libs_path))
+
+
+def _registry():
+    _ensure_fl_core_path()
+    from fl_core import simulation_registry
+
+    return simulation_registry
+
+
+def canonicalize_runtime_config(config: dict[str, Any]) -> None:
+    registry = _registry()
+
+    dataset = config.get("dataset")
+    if not isinstance(dataset, dict):
+        return
+    raw_dataset_name = dataset.get("name")
+    if isinstance(raw_dataset_name, str):
+        dataset["name"] = registry.canonical_dataset_name(raw_dataset_name)
+
+    spec = registry.get_dataset_spec(dataset.get("name"))
+
+    model = config.get("model")
+    if not isinstance(model, dict):
+        return
+    raw_model_name = model.get("name")
+    if isinstance(raw_model_name, str) and raw_model_name.strip().lower() != "auto":
+        model["name"] = registry.canonical_model_name(raw_model_name)
+    if spec is not None:
+        model["input_shape"] = list(spec.input_shape)
+        model["num_classes"] = spec.num_classes
+
+
+def validate_runtime_config_or_raise(config: dict[str, Any]) -> None:
+    registry = _registry()
+    errors = registry.validate_training_combination(config)
+    if errors:
+        raise exceptions.BadRequestError("; ".join(errors))
+
+
+def runtime_capabilities() -> dict[str, Any]:
+    return _registry().capabilities_payload()

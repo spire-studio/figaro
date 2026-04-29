@@ -5,7 +5,7 @@ dataset:
     group: "Data"
   name:
     type: "select"
-    options: ["CIFAR-10", "CIFAR-100", "MNIST", "Fashion-MNIST"]
+    options: ["MNIST", "EMNIST", "FEMNIST", "Fashion-MNIST", "CIFAR-10", "CIFAR-100", "AG News", "Sogou News", "Tiny-ImageNet", "Country211", "Flowers102", "GTSRB", "Shakespeare", "Stanford Cars", "COVIDx", "Kvasir"]
     default: "CIFAR-10"
     ui:
       label: "Dataset"
@@ -55,8 +55,8 @@ model:
     group: "Model"
   name:
     type: "select"
-    options: ["CNN", "LeNet", "ResNet"]
-    default: "CNN"
+    options: ["Auto", "Mclr_Logistic", "LeNet", "DNN", "FedAvgCNN", "ResNet18", "ResNet34", "ResNet50", "AlexNet", "MobileNet", "GoogleNet", "TextLogistic", "TextDNN", "TextCNN", "CharLSTM"]
+    default: "Auto"
     ui:
       label: "Model"
       featured: true
@@ -64,7 +64,7 @@ model:
       prompt_hint: "Neural network architecture for every client."
   input_shape:
     type: "list_int"
-    default: [32, 32, 3]
+    default: [3, 32, 32]
     ui:
       label: "Input shape"
   num_classes:
@@ -125,7 +125,7 @@ federated:
       prompt_hint: "Optimizer learning rate for local training."
   aggregation:
     type: "select"
-    options: ["fedavg", "fedprox", "scaffold"]
+    options: ["fedavg", "weighted_avg", "simple_avg", "fedprox", "scaffold"]
     default: "fedavg"
     ui:
       label: "Aggregation"
@@ -136,6 +136,12 @@ federated:
         fedavg:
           label: "FedAvg"
           description: "Executable default aggregation strategy."
+        weighted_avg:
+          label: "Weighted Avg"
+          description: "Executable sample-weighted averaging strategy."
+        simple_avg:
+          label: "Simple Avg"
+          description: "Executable unweighted averaging strategy."
         fedprox:
           label: "FedProx"
           badge: "experimental"
@@ -164,8 +170,32 @@ compression:
       type: "bool"
       default: false
       ui:
-        label: "Enable sparsification"
+        label: "Enable compression"
         group: "Advanced"
+    method:
+      type: "select"
+      options: ["global_topk", "random_k", "threshold", "sign", "quant_int8"]
+      default: "global_topk"
+      depends_on: "compression.sparsification.enable == true"
+      ui:
+        label: "Compression method"
+        group: "Advanced"
+        options:
+          global_topk:
+            label: "Global Top-K"
+            description: "Keep the largest update values globally."
+          random_k:
+            label: "Random-K"
+            description: "Keep a random subset of update values."
+          threshold:
+            label: "Threshold"
+            description: "Drop update values below an absolute threshold."
+          sign:
+            label: "Sign"
+            description: "Send sign-only updates scaled by mean magnitude."
+          quant_int8:
+            label: "Int8 Quantization"
+            description: "Quantize updates to int8 and dequantize before aggregation."
     ratio:
       type: "number"
       default: 0.5
@@ -173,7 +203,16 @@ compression:
       max: 1.0
       depends_on: "compression.sparsification.enable == true"
       ui:
-        label: "Top-K ratio"
+        label: "Keep ratio"
+        group: "Advanced"
+    threshold:
+      type: "number"
+      default: 0.001
+      min: 0
+      step: 0.0001
+      depends_on: "compression.sparsification.enable == true"
+      ui:
+        label: "Threshold"
         group: "Advanced"
 
 privacy:
@@ -188,6 +227,14 @@ privacy:
       ui:
         label: "Enable CKKS"
         group: "Advanced"
+    method:
+      type: "select"
+      options: ["ckks"]
+      default: "ckks"
+      depends_on: "privacy.homomorphic_encryption.enable == true"
+      ui:
+        label: "Encryption method"
+        group: "Advanced"
     poly_modulus_degree:
       type: "select"
       options: [4096, 8192, 16384]
@@ -195,6 +242,47 @@ privacy:
       depends_on: "privacy.homomorphic_encryption.enable == true"
       ui:
         label: "Polynomial modulus degree"
+        group: "Advanced"
+  differential_privacy:
+    enable:
+      type: "bool"
+      default: false
+      ui:
+        label: "Enable DP"
+        group: "Advanced"
+    clipping_norm:
+      type: "number"
+      default: 1.0
+      min: 0.0001
+      step: 0.1
+      depends_on: "privacy.differential_privacy.enable == true"
+      ui:
+        label: "Clipping norm"
+        group: "Advanced"
+    noise_multiplier:
+      type: "number"
+      default: 0.0
+      min: 0
+      step: 0.1
+      depends_on: "privacy.differential_privacy.enable == true"
+      ui:
+        label: "Noise multiplier"
+        group: "Advanced"
+  secure_aggregation:
+    enable:
+      type: "bool"
+      default: false
+      ui:
+        label: "Enable secure aggregation"
+        group: "Advanced"
+    mask_std:
+      type: "number"
+      default: 1.0
+      min: 0
+      step: 0.1
+      depends_on: "privacy.secure_aggregation.enable == true"
+      ui:
+        label: "Mask std"
         group: "Advanced"
 
 system:
