@@ -210,7 +210,7 @@ PRs welcome! Figaro is meant to be a readable, research-friendly FL platform.
 - [x] **Interactive Agent Planning** — Multi-turn dialogue support for refining experiments, plus visual topology previews (Plan Preview) before execution.
 - [x] **Execution Transparency** — Real-time tracking of node-level status during execution and automated natural-language interpretation of results.
 - [x] **Strict Configuration Engine** — Implement strict Pydantic/JSON Schema validation to resolve historical inconsistencies between `config_schema` and underlying algorithms.
-- [ ] **Advanced Experiment Tracking** — Multi-dimensional search filtering (by metrics, hyperparameters, status) and configuration version control (diffing).
+- [x] **Advanced Experiment Tracking** — Multi-dimensional search filtering (by metrics, hyperparameters, status) and configuration version control (diffing).
 
 **Phase 2: LLM & LoRA Federated Fine-Tuning**
 - [ ] **Native LLM Ecosystem Integration** — Seamless Hugging Face model loading (e.g., Llama 3, Qwen) and efficient parsing of JSONL instruction-tuning datasets.

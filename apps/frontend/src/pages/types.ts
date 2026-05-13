@@ -10,6 +10,7 @@ import type {
 import type { DistributedClient, DistributedJob, DistributedSession, DistributedSessionProgress } from "../api/distributed";
 import type {
   AgentExperimentResponse,
+  AgentHistoryFilters,
   AgentOptimizationJobSummary,
   AgentOptimizeProgressResponse,
   AgentOptimizeResponse,
@@ -241,6 +242,7 @@ export type AgentPageProps = {
   experimentRuns: AgentRunResponse[];
   goal: string;
   handleOptimize: () => Promise<void>;
+  historyFilters: AgentHistoryFilters;
   historyJobs: AgentOptimizationJobSummary[];
   jobName: string;
   lastSubmittedGoal: string | null;
@@ -257,6 +259,7 @@ export type AgentPageProps = {
   selectedHistoryJobId: number | null;
   selectExperiment: (experimentId: number) => Promise<void>;
   selectHistoryJob: (optimizationJobId: number) => Promise<void>;
+  refreshHistoryJobs: (filters?: AgentHistoryFilters) => Promise<void>;
   setConfigConstraint: (path: string, value: unknown) => void;
   clearConfigConstraint: (path: string) => void;
   setGoal: Dispatch<SetStateAction<string>>;
@@ -264,6 +267,7 @@ export type AgentPageProps = {
   setMaxIterations: Dispatch<SetStateAction<number>>;
   setModelName: Dispatch<SetStateAction<string>>;
   setObjective: Dispatch<SetStateAction<AgentOptimizationObjective>>;
+  setHistoryFilters: Dispatch<SetStateAction<AgentHistoryFilters>>;
   workflowStep: AgentWorkflowStep;
   setWorkflowStep: Dispatch<SetStateAction<AgentWorkflowStep>>;
   draftPlan: AgentPlanDraft | null;

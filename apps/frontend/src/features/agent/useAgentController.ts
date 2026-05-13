@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import {
   agentApi,
   type AgentExperimentResponse,
+  type AgentHistoryFilters,
   type AgentOptimizationObjective,
   type AgentOptimizationJobSummary,
   type AgentOptimizeProgressResponse,
@@ -86,6 +87,7 @@ export function useAgentController(): AgentPageProps {
   const [experimentRuns, setExperimentRuns] = useState<AgentRunResponse[]>([]);
   const [selectedExperimentId, setSelectedExperimentId] = useState<number | null>(null);
   const [historyJobs, setHistoryJobs] = useState<AgentOptimizationJobSummary[]>([]);
+  const [historyFilters, setHistoryFilters] = useState<AgentHistoryFilters>({ status: "all", objective: "all" });
   const [progress, setProgress] = useState<AgentOptimizeProgressResponse | null>(null);
   const [result, setResult] = useState<AgentOptimizeResponse | null>(null);
   const [selectedHistory, setSelectedHistory] = useState<AgentOptimizeProgressResponse | null>(null);
@@ -108,8 +110,8 @@ export function useAgentController(): AgentPageProps {
     });
   }
 
-  async function refreshHistoryJobs(): Promise<void> {
-    const jobs = await agentApi.listOptimizationJobs();
+  async function refreshHistoryJobs(filters: AgentHistoryFilters = historyFilters): Promise<void> {
+    const jobs = await agentApi.listOptimizationJobs(filters);
     setHistoryJobs(jobs);
     if (jobs.length > 0 && selectedHistoryJobId === null && !busy && !progress) {
       const first = jobs[0];
@@ -411,6 +413,7 @@ export function useAgentController(): AgentPageProps {
     experimentRuns,
     goal,
     handleOptimize,
+    historyFilters,
     historyJobs,
     jobName,
     lastSubmittedGoal,
@@ -427,12 +430,14 @@ export function useAgentController(): AgentPageProps {
     selectedHistoryJobId,
     selectExperiment,
     selectHistoryJob,
+    refreshHistoryJobs,
     setConfigConstraint,
     setGoal,
     setJobName,
     setMaxIterations,
     setModelName,
     setObjective,
+    setHistoryFilters,
     workflowStep,
     setWorkflowStep,
     draftPlan,

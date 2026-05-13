@@ -4,13 +4,14 @@ Repository layer for persistent agent optimization jobs.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
-from app.models.agent import AgentOptimizationJob, AgentOptimizationJobStatus
+from app.models.agent import AgentConfigVersion, AgentOptimizationJob, AgentOptimizationJobStatus
 from app.models.base import utcnow
 
 
@@ -62,8 +63,38 @@ class AgentOptimizationJobRepository:
         result = await self.session.execute(stmt)
         return result.scalars().first()
 
-    async def list_jobs(self) -> list[AgentOptimizationJob]:
+    async def list_jobs(
+        self,
+        *,
+        status: AgentOptimizationJobStatus | None = None,
+        q: str | None = None,
+        model_name: str | None = None,
+        best_score_min: float | None = None,
+        best_score_max: float | None = None,
+        created_from: datetime | None = None,
+        created_to: datetime | None = None,
+    ) -> list[AgentOptimizationJob]:
         stmt = select(AgentOptimizationJob).order_by(AgentOptimizationJob.updated_at.desc(), AgentOptimizationJob.id.desc())
+        if status is not None:
+            stmt = stmt.where(AgentOptimizationJob.status == status)
+        if q:
+            like_value = f"%{q.lower()}%"
+            stmt = stmt.where(
+                or_(
+                    func.lower(AgentOptimizationJob.goal).like(like_value),
+                    func.lower(AgentOptimizationJob.job_name).like(like_value),
+                )
+            )
+        if model_name:
+            stmt = stmt.where(func.lower(AgentOptimizationJob.model_name) == model_name.lower())
+        if best_score_min is not None:
+            stmt = stmt.where(AgentOptimizationJob.best_score >= best_score_min)
+        if best_score_max is not None:
+            stmt = stmt.where(AgentOptimizationJob.best_score <= best_score_max)
+        if created_from is not None:
+            stmt = stmt.where(AgentOptimizationJob.created_at >= created_from)
+        if created_to is not None:
+            stmt = stmt.where(AgentOptimizationJob.created_at <= created_to)
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
@@ -108,3 +139,70 @@ class AgentOptimizationJobRepository:
         self.session.add(job)
         await self.session.flush()
         return job
+
+
+class AgentConfigVersionRepository:
+    """CRUD helpers for persisted agent configuration versions."""
+
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    async def create_version(
+        self,
+        *,
+        optimization_job_id: int,
+        run_id: str | None,
+        iteration: int,
+        source: str,
+        label: str,
+        config_hash: str,
+        config_json: dict[str, Any],
+        diff_json: list[dict[str, Any]],
+    ) -> AgentConfigVersion:
+        version = AgentConfigVersion(
+            optimization_job_id=optimization_job_id,
+            run_id=run_id,
+            iteration=iteration,
+            source=source,
+            label=label,
+            config_hash=config_hash,
+            config_json=config_json,
+            diff_json=diff_json,
+        )
+        self.session.add(version)
+        await self.session.flush()
+        return version
+
+    async def find_version(
+        self,
+        *,
+        optimization_job_id: int,
+        run_id: str | None,
+        iteration: int,
+        source: str,
+        config_hash: str,
+    ) -> AgentConfigVersion | None:
+        stmt = select(AgentConfigVersion).where(
+            AgentConfigVersion.optimization_job_id == optimization_job_id,
+            AgentConfigVersion.iteration == iteration,
+            AgentConfigVersion.source == source,
+            AgentConfigVersion.config_hash == config_hash,
+        )
+        if run_id is None:
+            stmt = stmt.where(AgentConfigVersion.run_id.is_(None))
+        else:
+            stmt = stmt.where(AgentConfigVersion.run_id == run_id)
+        result = await self.session.execute(stmt)
+        return result.scalars().first()
+
+    async def get_version(self, version_id: int) -> AgentConfigVersion | None:
+        return await self.session.get(AgentConfigVersion, version_id)
+
+    async def list_versions(self, optimization_job_id: int) -> list[AgentConfigVersion]:
+        stmt = (
+            select(AgentConfigVersion)
+            .where(AgentConfigVersion.optimization_job_id == optimization_job_id)
+            .order_by(AgentConfigVersion.created_at.asc(), AgentConfigVersion.id.asc())
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())

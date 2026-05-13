@@ -10,7 +10,7 @@ from app.models.agent.experiments import (
     AgentExperimentRunStatus,
     AgentExperimentStatus,
 )
-from app.models.agent.optimization_jobs import AgentOptimizationJob, AgentOptimizationJobStatus
+from app.models.agent.optimization_jobs import AgentConfigVersion, AgentOptimizationJob, AgentOptimizationJobStatus
 
 __all__ = [
     "AgentExperiment",
@@ -21,4 +21,5 @@ __all__ = [
     "AgentExperimentRunResult",
     "AgentOptimizationJob",
     "AgentOptimizationJobStatus",
+    "AgentConfigVersion",
 ]

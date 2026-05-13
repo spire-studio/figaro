@@ -1,14 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
-import { History, Bot, Activity, Trophy, ArrowRight, Target, Calendar, FileJson, Settings2 } from "lucide-react";
+import { History, Bot, Activity, Trophy, ArrowRight, Target, Calendar, FileJson, Settings2, Search, RotateCcw, GitCompare } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../../../components/ui/card";
 import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
+import { Input } from "../../../components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../components/ui/select";
 import { Separator } from "../../../components/ui/separator";
 import { MiniLineChart } from "../../simulation/components/MiniLineChart";
 import { getValueByPath, isRecord } from "../../simulation/utils";
 import { fmt } from "../../../lib/time";
 import type { AgentPageProps } from "../../../pages/types";
-import { baseUrl } from "../../../../src/api/client";
+import { baseUrl } from "../../../api/client";
+import { agentApi, type AgentConfigChange, type AgentConfigVersion, type AgentHistoryFilters } from "../../../api/agent";
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { collectAgentSchemaFields, formatFieldValue, optionLabel, type AgentSchemaField } from "../schema";
@@ -34,6 +37,21 @@ type ConfigSummaryItem = {
   label: string;
   value: string;
 };
+
+const HISTORY_STATUS_OPTIONS = [
+  { value: "all", label: "All status" },
+  { value: "completed", label: "Completed" },
+  { value: "running", label: "Running" },
+  { value: "pending_review", label: "Pending review" },
+  { value: "failed", label: "Failed" },
+  { value: "queued", label: "Queued" },
+];
+
+const OBJECTIVE_OPTIONS = [
+  { value: "all", label: "All objectives" },
+  { value: "auto", label: "Auto" },
+  { value: "accuracy", label: "Accuracy" },
+];
 
 function asConfigRecord(value: unknown): Record<string, unknown> | null {
   return isRecord(value) ? value : null;
@@ -80,12 +98,38 @@ function buildConfigSummary(
     .filter((item): item is ConfigSummaryItem => item !== null);
 }
 
-export function AgentResultsCompare(props: AgentPageProps) {
-  const { historyJobs, selectedHistory, selectHistoryJob, setWorkflowStep, configSchema } = props;
+function formatDiffValue(value: unknown): string {
+  if (value === null || value === undefined) return "-";
+  if (typeof value === "string") return value;
+  return JSON.stringify(value);
+}
 
-  const jobs = (historyJobs || []).filter((job: any) => job.status === "completed");
+function diffBadgeClass(changeType: string): string {
+  if (changeType === "added" || changeType === "initialize") return "border-emerald-500/70 text-emerald-600";
+  if (changeType === "removed") return "border-red-500/70 text-red-600";
+  return "border-amber-500/70 text-amber-600";
+}
+
+export function AgentResultsCompare(props: AgentPageProps) {
+  const {
+    historyFilters,
+    historyJobs,
+    selectedHistory,
+    selectHistoryJob,
+    setHistoryFilters,
+    refreshHistoryJobs,
+    setWorkflowStep,
+    configSchema,
+    notifyError,
+  } = props;
+
+  const jobs = historyJobs || [];
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [metrics, setMetrics] = useState<any>(null);
+  const [configVersions, setConfigVersions] = useState<AgentConfigVersion[]>([]);
+  const [fromVersionKey, setFromVersionKey] = useState("baseline");
+  const [toVersionKey, setToVersionKey] = useState("");
+  const [configDiff, setConfigDiff] = useState<AgentConfigChange[]>([]);
 
   const experiments = selectedHistory?.experiments || [];
   const bestExp = experiments.reduce((prev: any, curr: any) => 
@@ -122,6 +166,83 @@ export function AgentResultsCompare(props: AgentPageProps) {
       .catch(() => {});
   }, [selectedRunId]);
 
+  useEffect(() => {
+    const optimizationJobId = selectedHistory?.optimization_job_id;
+    if (!optimizationJobId) {
+      setConfigVersions([]);
+      setFromVersionKey("baseline");
+      setToVersionKey("");
+      setConfigDiff([]);
+      return;
+    }
+
+    let cancelled = false;
+    agentApi.listConfigVersions(optimizationJobId)
+      .then((versions) => {
+        if (cancelled) return;
+        setConfigVersions(versions);
+        setFromVersionKey(versions.length > 1 ? String(versions[0].id) : "baseline");
+        setToVersionKey(versions.length > 0 ? String(versions[versions.length - 1].id) : "");
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setConfigVersions([]);
+          setConfigDiff([]);
+          notifyError(error, "agent-config-versions");
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedHistory?.optimization_job_id]);
+
+  useEffect(() => {
+    const optimizationJobId = selectedHistory?.optimization_job_id;
+    const toVersionId = Number(toVersionKey);
+    if (!optimizationJobId || !toVersionKey || !Number.isFinite(toVersionId)) {
+      setConfigDiff([]);
+      return;
+    }
+
+    const fromVersionId = fromVersionKey === "baseline" ? null : Number(fromVersionKey);
+    let cancelled = false;
+    agentApi.getConfigDiff(
+      optimizationJobId,
+      toVersionId,
+      fromVersionId !== null && Number.isFinite(fromVersionId) && fromVersionId !== toVersionId ? fromVersionId : null,
+    )
+      .then((payload) => {
+        if (!cancelled) {
+          setConfigDiff(payload.changes);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setConfigDiff([]);
+          notifyError(error, "agent-config-diff");
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedHistory?.optimization_job_id, fromVersionKey, toVersionKey]);
+
+  function updateHistoryFilter<K extends keyof AgentHistoryFilters>(key: K, value: AgentHistoryFilters[K]): void {
+    setHistoryFilters((current) => ({ ...current, [key]: value }));
+  }
+
+  async function applyHistoryFilters(): Promise<void> {
+    await refreshHistoryJobs(historyFilters);
+  }
+
+  function resetHistoryFilters(): void {
+    const next: AgentHistoryFilters = { status: "all", objective: "all" };
+    setHistoryFilters(next);
+    void refreshHistoryJobs(next).catch((error: unknown) => notifyError(error, "agent-history-filter-reset"));
+  }
+
   const globalResults = metrics?.global_results || {};
   const clientResults = metrics?.client_results || {};
   const actualDataLength = globalResults.global_accuracy?.length || 0;
@@ -137,7 +258,7 @@ export function AgentResultsCompare(props: AgentPageProps) {
   const clientTestLossSeries = clientIds.map((cId, idx) => ({ key: `${cId}_test_loss`, label: cId, color: CHART_COLORS[(idx + 1) % CHART_COLORS.length], values: safeSlice(clientResults[cId].test_loss) }));
 
   return (
-    <div className="grid h-full gap-4 xl:grid-cols-[300px_1fr]">
+    <div className="grid h-full gap-4 xl:grid-cols-[360px_1fr]">
       
       <Card className="flex flex-col min-h-0 bg-muted/10 border-r shadow-none rounded-none sm:rounded-xl">
         <CardHeader className="pb-3 px-4">
@@ -147,6 +268,57 @@ export function AgentResultsCompare(props: AgentPageProps) {
           <CardDescription className="text-xs">Past agent optimizations</CardDescription>
         </CardHeader>
         <CardContent className="flex-1 overflow-auto space-y-3 px-3 pb-4">
+          <div className="space-y-2 rounded-lg border bg-background/70 p-3">
+            <div className="flex items-center gap-2">
+              <Search className="h-4 w-4 text-muted-foreground" />
+              <Input
+                value={historyFilters.q ?? ""}
+                onChange={(event) => updateHistoryFilter("q", event.target.value)}
+                placeholder="Search goal or name"
+                className="h-8 text-xs"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <Select value={historyFilters.status ?? "all"} onValueChange={(value) => updateHistoryFilter("status", value)}>
+                <SelectTrigger className="h-8 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {HISTORY_STATUS_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={historyFilters.objective ?? "all"} onValueChange={(value) => updateHistoryFilter("objective", value as AgentHistoryFilters["objective"])}>
+                <SelectTrigger className="h-8 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {OBJECTIVE_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <Input value={historyFilters.dataset ?? ""} onChange={(event) => updateHistoryFilter("dataset", event.target.value)} placeholder="Dataset" className="h-8 text-xs" />
+              <Input value={historyFilters.config_model ?? ""} onChange={(event) => updateHistoryFilter("config_model", event.target.value)} placeholder="Model" className="h-8 text-xs" />
+              <Input value={historyFilters.aggregation ?? ""} onChange={(event) => updateHistoryFilter("aggregation", event.target.value)} placeholder="Aggregation" className="h-8 text-xs" />
+              <Input value={historyFilters.model_name ?? ""} onChange={(event) => updateHistoryFilter("model_name", event.target.value)} placeholder="LLM model" className="h-8 text-xs" />
+              <Input value={historyFilters.num_clients ?? ""} onChange={(event) => updateHistoryFilter("num_clients", event.target.value)} placeholder="Clients" className="h-8 text-xs" />
+              <Input value={historyFilters.num_rounds ?? ""} onChange={(event) => updateHistoryFilter("num_rounds", event.target.value)} placeholder="Rounds" className="h-8 text-xs" />
+              <Input value={historyFilters.best_score_min ?? ""} onChange={(event) => updateHistoryFilter("best_score_min", event.target.value)} placeholder="Min score" className="h-8 text-xs" />
+              <Input value={historyFilters.best_score_max ?? ""} onChange={(event) => updateHistoryFilter("best_score_max", event.target.value)} placeholder="Max score" className="h-8 text-xs" />
+            </div>
+            <div className="flex gap-2">
+              <Button type="button" size="sm" className="h-8 flex-1 text-xs" onClick={() => void applyHistoryFilters().catch((error: unknown) => notifyError(error, "agent-history-filter"))}>
+                <Search className="mr-2 h-3.5 w-3.5" /> Apply
+              </Button>
+              <Button type="button" variant="outline" size="sm" className="h-8 px-2" onClick={resetHistoryFilters} title="Reset filters">
+                <RotateCcw className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          </div>
           {jobs.length === 0 && <div className="text-xs text-muted-foreground text-center py-8">No history yet.</div>}
           
           {jobs.map((job: any) => {
@@ -291,6 +463,91 @@ export function AgentResultsCompare(props: AgentPageProps) {
                 </CardContent>
               </Card>
             </div>
+
+            <Card className="shadow-sm">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <GitCompare className="h-4 w-4 text-primary" /> Configuration Versions
+                </CardTitle>
+                <CardDescription className="text-xs">Captured plan and experiment configs</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {configVersions.length === 0 ? (
+                  <div className="rounded-md border border-dashed py-6 text-center text-xs text-muted-foreground">
+                    No config versions for this job.
+                  </div>
+                ) : (
+                  <>
+                    <div className="grid gap-2 md:grid-cols-[1fr_1fr]">
+                      <Select value={fromVersionKey} onValueChange={setFromVersionKey}>
+                        <SelectTrigger className="h-9 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="baseline">Baseline</SelectItem>
+                          {configVersions.map((version) => (
+                            <SelectItem key={version.id} value={String(version.id)}>
+                              {version.label} - {version.source}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Select value={toVersionKey} onValueChange={setToVersionKey}>
+                        <SelectTrigger className="h-9 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {configVersions.map((version) => (
+                            <SelectItem key={version.id} value={String(version.id)}>
+                              {version.label} - {version.source}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="grid gap-2 md:grid-cols-3">
+                      {configVersions.slice(-3).map((version) => (
+                        <div key={version.id} className="rounded-md border bg-muted/20 px-3 py-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="truncate text-xs font-semibold">{version.label}</span>
+                            <Badge variant="outline" className="shrink-0 text-[10px]">{version.source}</Badge>
+                          </div>
+                          <div className="mt-1 text-[10px] text-muted-foreground">
+                            Iteration {version.iteration || "-"} - {fmt(version.created_at)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="max-h-72 overflow-auto rounded-md border">
+                      {configDiff.length === 0 ? (
+                        <div className="p-4 text-center text-xs text-muted-foreground">No config changes.</div>
+                      ) : (
+                        <div className="divide-y">
+                          {configDiff.map((change, index) => (
+                            <div key={`${change.path}-${index}`} className="grid gap-2 p-3 text-xs md:grid-cols-[180px_90px_1fr]">
+                              <div className="break-all font-semibold text-foreground">{change.path}</div>
+                              <Badge variant="outline" className={`h-5 w-fit text-[10px] ${diffBadgeClass(change.change_type)}`}>
+                                {change.change_type}
+                              </Badge>
+                              <div className="grid gap-1 text-muted-foreground sm:grid-cols-2">
+                                <div className="min-w-0 rounded bg-muted/30 px-2 py-1">
+                                  <span className="font-semibold text-foreground/70">Before </span>
+                                  <span className="break-all">{formatDiffValue(change.old_value)}</span>
+                                </div>
+                                <div className="min-w-0 rounded bg-muted/30 px-2 py-1">
+                                  <span className="font-semibold text-foreground/70">After </span>
+                                  <span className="break-all">{formatDiffValue(change.new_value)}</span>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
 
             <div className="mt-4">
               <h3 className="text-sm font-bold tracking-tight flex items-center gap-2 mb-3">

@@ -29,6 +29,8 @@ from app.schemas.simulation import (
 )
 from app.schemas.message import Message
 from app.schemas.agent import (
+    AgentConfigDiffResponse,
+    AgentConfigVersionResponse,
     AgentCurrentPlanResponse,
     AgentExperimentSummary,
     AgentOptimizationJobSummaryResponse,
@@ -66,4 +68,6 @@ __all__ = [
     "AgentOptimizationJobSummaryResponse",
     "AgentCurrentPlanResponse",
     "AgentExperimentSummary",
+    "AgentConfigVersionResponse",
+    "AgentConfigDiffResponse",
 ]

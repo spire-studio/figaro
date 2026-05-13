@@ -4,12 +4,16 @@ Agent API endpoints for autonomous experiment optimization.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, status, HTTPException
+from datetime import datetime
+
+from fastapi import APIRouter, status, HTTPException, Query
 import json
 
 from app.api.deps import AsyncSessionDep
 from app.schemas.agent import (
+    AgentConfigDiffResponse,
     AgentConfigChangeResponse,
+    AgentConfigVersionResponse,
     AgentCurrentExperimentResponse,
     AgentCurrentPlanResponse,
     AgentExperimentResponse,
@@ -247,12 +251,52 @@ def _build_history_summary(item) -> AgentOptimizationJobSummaryResponse:
     status_code=status.HTTP_200_OK,
     summary="List persisted agent optimization jobs",
 )
-async def list_optimization_jobs(session: AsyncSessionDep) -> list[AgentOptimizationJobSummaryResponse]:
+async def list_optimization_jobs(
+    session: AsyncSessionDep,
+    job_status: str | None = Query(default=None, alias="status"),
+    q: str | None = Query(default=None),
+    model_name: str | None = Query(default=None),
+    objective: str | None = Query(default=None),
+    best_score_min: float | None = Query(default=None),
+    best_score_max: float | None = Query(default=None),
+    created_from: datetime | None = Query(default=None),
+    created_to: datetime | None = Query(default=None),
+    dataset: str | None = Query(default=None),
+    config_model: str | None = Query(default=None),
+    aggregation: str | None = Query(default=None),
+    num_clients: int | None = Query(default=None),
+    num_rounds: int | None = Query(default=None),
+    dataset_name_alias: str | None = Query(default=None, alias="dataset.name"),
+    config_model_alias: str | None = Query(default=None, alias="model.name"),
+    aggregation_alias: str | None = Query(default=None, alias="federated.aggregation"),
+    num_clients_alias: int | None = Query(default=None, alias="federated.num_clients"),
+    num_rounds_alias: int | None = Query(default=None, alias="federated.num_rounds"),
+) -> list[AgentOptimizationJobSummaryResponse]:
     """
     Return persisted Agent optimization jobs ordered by latest update time.
     """
     service = AgentOptimizationHistoryService(session)
-    jobs = await service.list_jobs()
+    config_filters = {
+        "dataset.name": dataset_name_alias or dataset,
+        "model.name": config_model_alias or config_model,
+        "federated.aggregation": aggregation_alias or aggregation,
+        "federated.num_clients": num_clients_alias if num_clients_alias is not None else num_clients,
+        "federated.num_rounds": num_rounds_alias if num_rounds_alias is not None else num_rounds,
+    }
+    try:
+        jobs = await service.list_jobs(
+            status=job_status,
+            q=q,
+            model_name=model_name,
+            objective=objective,
+            best_score_min=best_score_min,
+            best_score_max=best_score_max,
+            created_from=created_from,
+            created_to=created_to,
+            config_filters=config_filters,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     return [_build_history_summary(item) for item in jobs]
 
 
@@ -288,6 +332,67 @@ async def get_optimization_job(
     snapshot.setdefault("updated_at", job.updated_at)
     snapshot.setdefault("finished_at", job.finished_at)
     return _build_progress_response(snapshot)
+
+
+def _to_config_version_response(version) -> AgentConfigVersionResponse:
+    return AgentConfigVersionResponse(
+        id=version.id,
+        optimization_job_id=version.optimization_job_id,
+        run_id=version.run_id,
+        iteration=version.iteration,
+        source=version.source,
+        label=version.label,
+        config_hash=version.config_hash,
+        config_json=version.config_json if isinstance(version.config_json, dict) else {},
+        diff_json=[
+            AgentConfigChangeResponse.model_validate(item)
+            for item in (version.diff_json if isinstance(version.diff_json, list) else [])
+        ],
+        created_at=version.created_at,
+    )
+
+
+@agent_router.get(
+    "/optimization-jobs/{optimization_job_id}/config-versions",
+    response_model=list[AgentConfigVersionResponse],
+    status_code=status.HTTP_200_OK,
+    summary="List persisted config versions for an agent optimization job",
+)
+async def list_optimization_job_config_versions(
+    optimization_job_id: int,
+    session: AsyncSessionDep,
+) -> list[AgentConfigVersionResponse]:
+    """Return config versions captured during planning and experiment execution."""
+    service = AgentOptimizationHistoryService(session)
+    versions = await service.list_config_versions(optimization_job_id)
+    return [_to_config_version_response(version) for version in versions]
+
+
+@agent_router.get(
+    "/optimization-jobs/{optimization_job_id}/config-diff",
+    response_model=AgentConfigDiffResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Diff two persisted config versions for an agent optimization job",
+)
+async def diff_optimization_job_config_versions(
+    optimization_job_id: int,
+    session: AsyncSessionDep,
+    to_version_id: int = Query(...),
+    from_version_id: int | None = Query(default=None),
+) -> AgentConfigDiffResponse:
+    """Return a normalized config diff between two persisted versions."""
+    service = AgentOptimizationHistoryService(session)
+    changes = await service.diff_config_versions(
+        optimization_job_id=optimization_job_id,
+        from_version_id=from_version_id,
+        to_version_id=to_version_id,
+    )
+    return AgentConfigDiffResponse(
+        optimization_job_id=optimization_job_id,
+        from_version_id=from_version_id,
+        to_version_id=to_version_id,
+        changes=[AgentConfigChangeResponse.model_validate(item) for item in changes],
+    )
 
 
 @agent_router.post(
