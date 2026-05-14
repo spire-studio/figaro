@@ -212,12 +212,12 @@ PRs welcome! Figaro is meant to be a readable, research-friendly FL platform.
 - [x] **Strict Configuration Engine** — Implement strict Pydantic/JSON Schema validation to resolve historical inconsistencies between `config_schema` and underlying algorithms.
 - [x] **Advanced Experiment Tracking** — Multi-dimensional search filtering (by metrics, hyperparameters, status) and configuration version control (diffing).
 
-**Phase 2: LLM & LoRA Federated Fine-Tuning**
-- [ ] **Native LLM Ecosystem Integration** — Seamless Hugging Face model loading (e.g., Llama 3, Qwen) and efficient parsing of JSONL instruction-tuning datasets.
-- [ ] **Parameter-Efficient Runtime** — Deep integration with LoRA/PEFT, including support for QLoRA (4-bit/8-bit quantization) to lower client-side memory barriers.
-- [ ] **Specialized Adapter Aggregation** — Custom aggregation mechanisms for LoRA adapters, exploring support for heterogeneous LoRA ranks across clients.
-- [ ] **LLM Evaluation Metrics** — Built-in evaluation for generative tasks (Rouge, BLEU, Perplexity) and automated LLM-as-a-Judge capabilities.
-- [ ] **Hardware Guardrails** — Pre-run dynamic GPU memory estimation (OOM prevention) and automated tuning of gradient accumulation and checkpointing.
+**Phase 2: LLM Federated PEFT Fine-Tuning**
+- [ ] **LLM/PEFT Configuration Surface** — Extend the existing `config_schema`, Agent planner, and compatibility checks with LLM task type, base model, tokenizer, prompt template, dataset format, and adapter hyperparameters.
+- [ ] **Hugging Face Model & Dataset Adapters** — Add adapters behind the current `ModelManager` and data loading pipeline for causal LM / instruction tuning models and JSONL-style supervised fine-tuning datasets.
+- [ ] **PEFT Training Runtime** — Add a LoRA-first training path to the existing simulation/distributed runners, with QLoRA-ready quantization options and per-client memory/device controls.
+- [ ] **Adapter-Only Federated Aggregation** — Aggregate and persist PEFT adapter weights instead of full model checkpoints, including metadata needed to replay or resume each federated round.
+- [ ] **LLM Evaluation & Result Tracking** — Track LLM-specific metrics such as training loss, validation loss, perplexity, token throughput, and adapter checkpoint lineage in the existing Agent results views.
 
 **Phase 3: Enterprise & Team Collaboration**
 - [ ] **Multi-Tenant Workspaces** — Isolated project environments with Role-Based Access Control (RBAC) and comprehensive audit logging.

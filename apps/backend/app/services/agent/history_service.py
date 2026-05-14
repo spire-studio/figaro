@@ -173,7 +173,7 @@ class AgentOptimizationHistoryService:
 
     async def list_config_versions(self, optimization_job_id: int) -> list[AgentConfigVersion]:
         job = await self.get_job_or_raise(optimization_job_id)
-        versions = await self.config_version_repository.list_versions(optimization_job_id)
+        versions = await self.config_version_repository.list_versions(optimization_job_id, source="experiment")
         if versions:
             return versions
         snapshot = job.snapshot_json if isinstance(job.snapshot_json, dict) else {}
@@ -181,7 +181,7 @@ class AgentOptimizationHistoryService:
             return []
         await self._sync_config_versions(job, snapshot)
         await self.session.commit()
-        return await self.config_version_repository.list_versions(optimization_job_id)
+        return await self.config_version_repository.list_versions(optimization_job_id, source="experiment")
 
     async def get_config_version_or_raise(self, optimization_job_id: int, version_id: int) -> AgentConfigVersion:
         await self.get_job_or_raise(optimization_job_id)
@@ -234,30 +234,8 @@ class AgentOptimizationHistoryService:
         candidates: list[dict[str, Any]] = []
         previous_config: dict[str, Any] | None = None
 
-        draft_experiments = snapshot.get("draft_experiments")
-        if isinstance(draft_experiments, list):
-            for index, item in enumerate(draft_experiments, start=1):
-                if not isinstance(item, dict):
-                    continue
-                config = item.get("config_patch") or item.get("config")
-                if not isinstance(config, dict):
-                    continue
-                candidates.append(
-                    cls._build_config_version_candidate(
-                        config=config,
-                        previous_config=previous_config,
-                        iteration=int(item.get("iteration") or index),
-                        source="draft",
-                        run_id=None,
-                        label=str(item.get("name") or f"Draft {index}"),
-                        diff_json=item.get("config_diff"),
-                    )
-                )
-                previous_config = config
-
         experiments = snapshot.get("experiments")
         if isinstance(experiments, list):
-            previous_config = None
             for index, item in enumerate(experiments, start=1):
                 if not isinstance(item, dict):
                     continue
@@ -276,21 +254,6 @@ class AgentOptimizationHistoryService:
                     )
                 )
                 previous_config = config
-
-        best_config = snapshot.get("best_config")
-        if isinstance(best_config, dict):
-            best_record = cls._best_snapshot_experiment(snapshot)
-            candidates.append(
-                cls._build_config_version_candidate(
-                    config=best_config,
-                    previous_config=previous_config,
-                    iteration=int(best_record.get("iteration") or 0) if best_record else 0,
-                    source="best",
-                    run_id=str(best_record.get("run_id")) if best_record and best_record.get("run_id") is not None else None,
-                    label="Best configuration",
-                    diff_json=None,
-                )
-            )
 
         return candidates
 

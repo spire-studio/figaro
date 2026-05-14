@@ -3,7 +3,6 @@ import { History, Bot, Activity, Trophy, ArrowRight, Target, Calendar, FileJson,
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../../../components/ui/card";
 import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
-import { Input } from "../../../components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../components/ui/select";
 import { Separator } from "../../../components/ui/separator";
 import { MiniLineChart } from "../../simulation/components/MiniLineChart";
@@ -14,7 +13,7 @@ import { baseUrl } from "../../../api/client";
 import { agentApi, type AgentConfigChange, type AgentConfigVersion, type AgentHistoryFilters } from "../../../api/agent";
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { collectAgentSchemaFields, formatFieldValue, optionLabel, type AgentSchemaField } from "../schema";
+import { collectAgentSchemaFields, formatFieldValue, optionDisabled, optionLabel, type AgentSchemaField } from "../schema";
 
 const CHART_COLORS = [
   "hsl(var(--primary))", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#06b6d4"
@@ -52,6 +51,11 @@ const OBJECTIVE_OPTIONS = [
   { value: "auto", label: "Auto" },
   { value: "accuracy", label: "Accuracy" },
 ];
+
+type SelectOption = {
+  value: string;
+  label: string;
+};
 
 function asConfigRecord(value: unknown): Record<string, unknown> | null {
   return isRecord(value) ? value : null;
@@ -110,6 +114,40 @@ function diffBadgeClass(changeType: string): string {
   return "border-amber-500/70 text-amber-600";
 }
 
+function schemaSelectOptions(schema: Record<string, unknown> | null, path: string): SelectOption[] {
+  const field = collectAgentSchemaFields(schema, { featuredOnly: false }).find((item) => item.path === path);
+  if (!field) return [];
+  return field.options
+    .filter((option) => !optionDisabled(field.definition, option))
+    .map((option) => ({ value: String(option), label: optionLabel(field.definition, option) }));
+}
+
+function optionSelect(
+  label: string,
+  value: string | undefined,
+  options: SelectOption[],
+  onChange: (value: string) => void,
+) {
+  return (
+    <div className="space-y-1">
+      <div className="text-[10px] font-semibold uppercase text-muted-foreground">{label}</div>
+      <Select value={value || "all"} onValueChange={onChange}>
+        <SelectTrigger className="h-8 text-xs">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">Any</SelectItem>
+          {options.map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
 export function AgentResultsCompare(props: AgentPageProps) {
   const {
     historyFilters,
@@ -120,6 +158,7 @@ export function AgentResultsCompare(props: AgentPageProps) {
     refreshHistoryJobs,
     setWorkflowStep,
     configSchema,
+    modelOptions,
     notifyError,
   } = props;
 
@@ -127,7 +166,7 @@ export function AgentResultsCompare(props: AgentPageProps) {
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [metrics, setMetrics] = useState<any>(null);
   const [configVersions, setConfigVersions] = useState<AgentConfigVersion[]>([]);
-  const [fromVersionKey, setFromVersionKey] = useState("baseline");
+  const [fromVersionKey, setFromVersionKey] = useState("");
   const [toVersionKey, setToVersionKey] = useState("");
   const [configDiff, setConfigDiff] = useState<AgentConfigChange[]>([]);
 
@@ -142,6 +181,13 @@ export function AgentResultsCompare(props: AgentPageProps) {
   const bestConfigJson = useMemo(
     () => (bestConfig ? JSON.stringify(bestConfig, null, 2) : ""),
     [bestConfig],
+  );
+  const datasetOptions = useMemo(() => schemaSelectOptions(configSchema, "dataset.name"), [configSchema]);
+  const configModelOptions = useMemo(() => schemaSelectOptions(configSchema, "model.name"), [configSchema]);
+  const aggregationOptions = useMemo(() => schemaSelectOptions(configSchema, "federated.aggregation"), [configSchema]);
+  const llmModelOptions = useMemo(
+    () => modelOptions.map((item) => ({ value: item, label: item })),
+    [modelOptions],
   );
 
   useEffect(() => {
@@ -170,7 +216,7 @@ export function AgentResultsCompare(props: AgentPageProps) {
     const optimizationJobId = selectedHistory?.optimization_job_id;
     if (!optimizationJobId) {
       setConfigVersions([]);
-      setFromVersionKey("baseline");
+      setFromVersionKey("");
       setToVersionKey("");
       setConfigDiff([]);
       return;
@@ -180,13 +226,19 @@ export function AgentResultsCompare(props: AgentPageProps) {
     agentApi.listConfigVersions(optimizationJobId)
       .then((versions) => {
         if (cancelled) return;
-        setConfigVersions(versions);
-        setFromVersionKey(versions.length > 1 ? String(versions[0].id) : "baseline");
-        setToVersionKey(versions.length > 0 ? String(versions[versions.length - 1].id) : "");
+        const experimentVersions = versions.filter((version) => version.source === "experiment");
+        const firstVersion = experimentVersions[0];
+        const lastVersion = experimentVersions[experimentVersions.length - 1];
+        setConfigVersions(experimentVersions);
+        setFromVersionKey(firstVersion ? String(firstVersion.id) : "");
+        setToVersionKey(lastVersion ? String(lastVersion.id) : "");
+        setConfigDiff([]);
       })
       .catch((error) => {
         if (!cancelled) {
           setConfigVersions([]);
+          setFromVersionKey("");
+          setToVersionKey("");
           setConfigDiff([]);
           notifyError(error, "agent-config-versions");
         }
@@ -199,18 +251,25 @@ export function AgentResultsCompare(props: AgentPageProps) {
 
   useEffect(() => {
     const optimizationJobId = selectedHistory?.optimization_job_id;
+    const fromVersionId = Number(fromVersionKey);
     const toVersionId = Number(toVersionKey);
-    if (!optimizationJobId || !toVersionKey || !Number.isFinite(toVersionId)) {
+    if (
+      !optimizationJobId ||
+      !fromVersionKey ||
+      !toVersionKey ||
+      !Number.isFinite(fromVersionId) ||
+      !Number.isFinite(toVersionId) ||
+      fromVersionId === toVersionId
+    ) {
       setConfigDiff([]);
       return;
     }
 
-    const fromVersionId = fromVersionKey === "baseline" ? null : Number(fromVersionKey);
     let cancelled = false;
     agentApi.getConfigDiff(
       optimizationJobId,
       toVersionId,
-      fromVersionId !== null && Number.isFinite(fromVersionId) && fromVersionId !== toVersionId ? fromVersionId : null,
+      fromVersionId,
     )
       .then((payload) => {
         if (!cancelled) {
@@ -234,7 +293,8 @@ export function AgentResultsCompare(props: AgentPageProps) {
   }
 
   async function applyHistoryFilters(): Promise<void> {
-    await refreshHistoryJobs(historyFilters);
+    const { q: _unusedTextFilter, ...selectableFilters } = historyFilters;
+    await refreshHistoryJobs(selectableFilters);
   }
 
   function resetHistoryFilters(): void {
@@ -268,15 +328,10 @@ export function AgentResultsCompare(props: AgentPageProps) {
           <CardDescription className="text-xs">Past agent optimizations</CardDescription>
         </CardHeader>
         <CardContent className="flex-1 overflow-auto space-y-3 px-3 pb-4">
-          <div className="space-y-2 rounded-lg border bg-background/70 p-3">
-            <div className="flex items-center gap-2">
+          <div className="space-y-3 rounded-lg border bg-background/70 p-3">
+            <div className="flex items-center gap-2 text-xs font-semibold text-foreground">
               <Search className="h-4 w-4 text-muted-foreground" />
-              <Input
-                value={historyFilters.q ?? ""}
-                onChange={(event) => updateHistoryFilter("q", event.target.value)}
-                placeholder="Search goal or name"
-                className="h-8 text-xs"
-              />
+              Filter history
             </div>
             <div className="grid grid-cols-2 gap-2">
               <Select value={historyFilters.status ?? "all"} onValueChange={(value) => updateHistoryFilter("status", value)}>
@@ -301,14 +356,10 @@ export function AgentResultsCompare(props: AgentPageProps) {
               </Select>
             </div>
             <div className="grid grid-cols-2 gap-2">
-              <Input value={historyFilters.dataset ?? ""} onChange={(event) => updateHistoryFilter("dataset", event.target.value)} placeholder="Dataset" className="h-8 text-xs" />
-              <Input value={historyFilters.config_model ?? ""} onChange={(event) => updateHistoryFilter("config_model", event.target.value)} placeholder="Model" className="h-8 text-xs" />
-              <Input value={historyFilters.aggregation ?? ""} onChange={(event) => updateHistoryFilter("aggregation", event.target.value)} placeholder="Aggregation" className="h-8 text-xs" />
-              <Input value={historyFilters.model_name ?? ""} onChange={(event) => updateHistoryFilter("model_name", event.target.value)} placeholder="LLM model" className="h-8 text-xs" />
-              <Input value={historyFilters.num_clients ?? ""} onChange={(event) => updateHistoryFilter("num_clients", event.target.value)} placeholder="Clients" className="h-8 text-xs" />
-              <Input value={historyFilters.num_rounds ?? ""} onChange={(event) => updateHistoryFilter("num_rounds", event.target.value)} placeholder="Rounds" className="h-8 text-xs" />
-              <Input value={historyFilters.best_score_min ?? ""} onChange={(event) => updateHistoryFilter("best_score_min", event.target.value)} placeholder="Min score" className="h-8 text-xs" />
-              <Input value={historyFilters.best_score_max ?? ""} onChange={(event) => updateHistoryFilter("best_score_max", event.target.value)} placeholder="Max score" className="h-8 text-xs" />
+              {optionSelect("Dataset", historyFilters.dataset, datasetOptions, (value) => updateHistoryFilter("dataset", value))}
+              {optionSelect("Model", historyFilters.config_model, configModelOptions, (value) => updateHistoryFilter("config_model", value))}
+              {optionSelect("Aggregation", historyFilters.aggregation, aggregationOptions, (value) => updateHistoryFilter("aggregation", value))}
+              {optionSelect("LLM", historyFilters.model_name, llmModelOptions, (value) => updateHistoryFilter("model_name", value))}
             </div>
             <div className="flex gap-2">
               <Button type="button" size="sm" className="h-8 flex-1 text-xs" onClick={() => void applyHistoryFilters().catch((error: unknown) => notifyError(error, "agent-history-filter"))}>
@@ -469,37 +520,36 @@ export function AgentResultsCompare(props: AgentPageProps) {
                 <CardTitle className="text-sm flex items-center gap-2">
                   <GitCompare className="h-4 w-4 text-primary" /> Configuration Versions
                 </CardTitle>
-                <CardDescription className="text-xs">Captured plan and experiment configs</CardDescription>
+                <CardDescription className="text-xs">Compare captured experiment configs</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
                 {configVersions.length === 0 ? (
                   <div className="rounded-md border border-dashed py-6 text-center text-xs text-muted-foreground">
-                    No config versions for this job.
+                    No experiment configs for this job.
                   </div>
                 ) : (
                   <>
                     <div className="grid gap-2 md:grid-cols-[1fr_1fr]">
                       <Select value={fromVersionKey} onValueChange={setFromVersionKey}>
                         <SelectTrigger className="h-9 text-xs">
-                          <SelectValue />
+                          <SelectValue placeholder="From experiment" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="baseline">Baseline</SelectItem>
                           {configVersions.map((version) => (
                             <SelectItem key={version.id} value={String(version.id)}>
-                              {version.label} - {version.source}
+                              {version.label}
                             </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
                       <Select value={toVersionKey} onValueChange={setToVersionKey}>
                         <SelectTrigger className="h-9 text-xs">
-                          <SelectValue />
+                          <SelectValue placeholder="To experiment" />
                         </SelectTrigger>
                         <SelectContent>
                           {configVersions.map((version) => (
                             <SelectItem key={version.id} value={String(version.id)}>
-                              {version.label} - {version.source}
+                              {version.label}
                             </SelectItem>
                           ))}
                         </SelectContent>

@@ -213,12 +213,12 @@ figaro/
 - [x] **配置引擎重构** —— 引入基于 Pydantic/JSON Schema 的严格强校验，彻底修复 `config_schema` 与底层算法实现不一致的问题。
 - [x] **高阶实验管理** —— 支持按指标、超参等多维度搜索过滤实验历史，支持配置文件版本控制与 Diff 差异对比。
 
-**Phase 2：LLM / LoRA 联邦微调支持**
-- [ ] **大模型生态原生接入** —— 内置 Hugging Face 适配层，一键加载主流开源模型，支持 JSONL 格式的指令微调数据集高效解析。
-- [ ] **高效分布式微调** —— 深度集成 LoRA/PEFT 训练环境，支持 QLoRA (4-bit/8-bit 量化) 以显著降低边缘节点的显存门槛。
-- [ ] **专属权重聚合策略** —— 针对 LLM 微调定制的 Adapter 权重聚合机制，探索支持客户端异构 LoRA Rank 的聚合方案。
-- [ ] **大模型专项评估体系** —— 集成生成式 NLP 指标，并引入基于大模型的自动化指令跟随能力评估 (LLM-as-a-Judge)。
-- [ ] **资源护栏与预判** —— 训练任务启动前进行动态 GPU 显存预估（防 OOM 机制），并支持梯度累积与 Checkpointing 的自动调优。
+**Phase 2：基于现有框架的 LLM 联邦 PEFT 微调支持**
+- [ ] **LLM/PEFT 配置面扩展** —— 在现有 `config_schema`、Agent 规划与兼容性校验中加入任务类型、基础模型、Tokenizer、Prompt 模板、数据格式和 Adapter 超参。
+- [ ] **Hugging Face 模型与数据适配** —— 在当前 `ModelManager` 与数据加载管线后扩展 Causal LM / 指令微调模型适配层，支持 JSONL 等 SFT 数据格式解析。
+- [ ] **PEFT 微调运行时** —— 在现有单机仿真与分布式 Runner 中加入 LoRA 优先的训练路径，并预留 QLoRA 量化选项与客户端显存/设备控制。
+- [ ] **Adapter 权重联邦聚合** —— 聚合和持久化 PEFT Adapter 权重，而不是全量模型 checkpoint，并记录可复现/续跑每轮训练所需的元数据。
+- [ ] **LLM 指标与结果追踪** —— 在现有 Agent 结果视图中追踪 training loss、validation loss、perplexity、token throughput 与 Adapter checkpoint lineage 等指标。
 
 **Phase 3：平台化与企业级协作**
 - [ ] **多租户与细粒度权限** —— 构建多用户隔离的项目空间 (Workspaces)，引入基于角色的访问控制 (RBAC) 和完整的操作审计日志。

@@ -198,11 +198,13 @@ class AgentConfigVersionRepository:
     async def get_version(self, version_id: int) -> AgentConfigVersion | None:
         return await self.session.get(AgentConfigVersion, version_id)
 
-    async def list_versions(self, optimization_job_id: int) -> list[AgentConfigVersion]:
+    async def list_versions(self, optimization_job_id: int, *, source: str | None = None) -> list[AgentConfigVersion]:
         stmt = (
             select(AgentConfigVersion)
             .where(AgentConfigVersion.optimization_job_id == optimization_job_id)
             .order_by(AgentConfigVersion.created_at.asc(), AgentConfigVersion.id.asc())
         )
+        if source is not None:
+            stmt = stmt.where(AgentConfigVersion.source == source)
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
