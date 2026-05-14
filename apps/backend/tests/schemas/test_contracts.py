@@ -85,6 +85,8 @@ def test_metrics_and_progress_schema_defaults_and_parsing():
     assert metrics.global_results.rounds == []
     assert metrics.global_results.global_loss == []
     assert metrics.global_results.global_accuracy == []
+    assert metrics.llm_results.rounds == []
+    assert metrics.llm_dataset == {}
     assert metrics.client_results == {}
 
     parsed = SimulationRunMetricsResponse.model_validate(

@@ -6,6 +6,9 @@ from typing import Any
 
 from app.core import exceptions
 
+CLASSIC_FL_TASK = "classic_fl"
+LLM_PEFT_SFT_TASK = "llm_peft_sft"
+
 
 def _project_root() -> Path:
     return Path(__file__).resolve().parents[5]
@@ -24,7 +27,21 @@ def _registry():
     return simulation_registry
 
 
+def runtime_task_type(config: dict[str, Any]) -> str:
+    """Return the training route encoded in config, defaulting legacy configs to classic FL."""
+    task = config.get("task")
+    if not isinstance(task, dict):
+        return CLASSIC_FL_TASK
+    raw_task_type = task.get("type", CLASSIC_FL_TASK)
+    if not isinstance(raw_task_type, str) or not raw_task_type.strip():
+        return CLASSIC_FL_TASK
+    return raw_task_type.strip()
+
+
 def canonicalize_runtime_config(config: dict[str, Any]) -> None:
+    if runtime_task_type(config) != CLASSIC_FL_TASK:
+        return
+
     registry = _registry()
 
     dataset = config.get("dataset")
@@ -48,6 +65,9 @@ def canonicalize_runtime_config(config: dict[str, Any]) -> None:
 
 
 def validate_runtime_config_or_raise(config: dict[str, Any]) -> None:
+    if runtime_task_type(config) != CLASSIC_FL_TASK:
+        return
+
     registry = _registry()
     errors = registry.validate_training_combination(config)
     if errors:

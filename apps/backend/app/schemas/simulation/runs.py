@@ -68,6 +68,17 @@ class SimulationRunGlobalResults(BaseModel):
     global_accuracy: list[float] = Field(default_factory=list)
 
 
+class SimulationRunLlmResults(BaseModel):
+    """LLM PEFT metric series."""
+
+    rounds: list[int] = Field(default_factory=list)
+    train_loss: list[float] = Field(default_factory=list)
+    validation_loss: list[float] = Field(default_factory=list)
+    perplexity: list[float] = Field(default_factory=list)
+    token_throughput: list[float] = Field(default_factory=list)
+    adapter_size_bytes: list[int] = Field(default_factory=list)
+
+
 class SimulationRunClientSeries(BaseModel):
     """Per-client metric series in simulation mode."""
 
@@ -90,4 +101,7 @@ class SimulationRunMetricsResponse(BaseModel):
 
     experiment_info: SimulationRunExperimentInfo = Field(default_factory=SimulationRunExperimentInfo)
     global_results: SimulationRunGlobalResults = Field(default_factory=SimulationRunGlobalResults)
+    llm_results: SimulationRunLlmResults = Field(default_factory=SimulationRunLlmResults)
+    llm_dataset: dict[str, Any] = Field(default_factory=dict)
+    llm_runtime: dict[str, Any] = Field(default_factory=dict)
     client_results: dict[str, SimulationRunClientSeries] = Field(default_factory=dict)

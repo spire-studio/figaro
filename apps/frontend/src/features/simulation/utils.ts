@@ -15,6 +15,7 @@ const CLIENT_LAYOUT = {
 };
 
 export const DEFAULT_JOB_CONFIG = {
+  task: { type: "classic_fl" },
   system: { mode: "simulation" as SystemMode },
   dataset: { name: "CIFAR-10", data_dir: "./datasets", distribution: "non_iid", alpha: 0.5 },
   federated: { num_clients: 3, num_rounds: 10, clients_per_round: 3, local_epochs: 5, learning_rate: 0.01 },

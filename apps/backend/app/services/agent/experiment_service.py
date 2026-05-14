@@ -734,6 +734,16 @@ class AgentExperimentRunService:
                 "global_loss": [],
                 "global_accuracy": [],
             },
+            "llm_results": {
+                "rounds": [],
+                "train_loss": [],
+                "validation_loss": [],
+                "perplexity": [],
+                "token_throughput": [],
+                "adapter_size_bytes": [],
+            },
+            "llm_dataset": {},
+            "llm_runtime": {},
             "client_results": {},
         }
 
@@ -796,6 +806,25 @@ class AgentExperimentRunService:
                 "global_loss": self._to_float_list(global_results.get("global_loss")),
                 "global_accuracy": self._to_float_list(global_results.get("global_accuracy")),
             }
+
+        llm_results = payload.get("llm_results")
+        if isinstance(llm_results, dict):
+            normalized["llm_results"] = {
+                "rounds": self._to_int_list(llm_results.get("rounds")),
+                "train_loss": self._to_float_list(llm_results.get("train_loss")),
+                "validation_loss": self._to_float_list(llm_results.get("validation_loss")),
+                "perplexity": self._to_float_list(llm_results.get("perplexity")),
+                "token_throughput": self._to_float_list(llm_results.get("token_throughput")),
+                "adapter_size_bytes": self._to_int_list(llm_results.get("adapter_size_bytes")),
+            }
+
+        llm_dataset = payload.get("llm_dataset")
+        if isinstance(llm_dataset, dict):
+            normalized["llm_dataset"] = llm_dataset
+
+        llm_runtime = payload.get("llm_runtime")
+        if isinstance(llm_runtime, dict):
+            normalized["llm_runtime"] = llm_runtime
 
         client_results = payload.get("client_results")
         if isinstance(client_results, dict):

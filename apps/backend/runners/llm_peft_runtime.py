@@ -1,0 +1,216 @@
+from __future__ import annotations
+
+import json
+import os
+import random
+import sys
+import time
+from pathlib import Path
+from typing import Any
+
+import torch
+import yaml
+
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+FL_CORE_PARENT = PROJECT_ROOT / "libs"
+if str(FL_CORE_PARENT) not in sys.path:
+    sys.path.insert(0, str(FL_CORE_PARENT))
+
+from fl_core.llm.config import LlmPeftRuntimeConfig, normalize_llm_peft_config
+from fl_core.llm.data import load_jsonl_sft_records, split_records_by_client
+from fl_core.llm.aggregation import aggregate_adapter_state_dicts
+from fl_core.llm.artifacts import adapter_state_size_bytes, save_adapter_artifact
+from fl_core.llm.metrics import append_llm_round_metrics, empty_llm_metrics_payload
+from fl_core.llm.modeling import missing_optional_dependencies
+from fl_core.llm.trainer import LlmPeftTrainer
+
+
+class LlmPeftRuntimeNotImplemented(RuntimeError):
+    """Raised when the planned LLM PEFT route is selected before implementation."""
+
+
+def run_llm_peft_runtime(config_path: Path) -> bool:
+    """
+    Bootstrap the Phase 2 LLM PEFT federated fine-tuning route.
+
+    This route already owns config/data/metrics preparation. The heavy
+    Transformers/PEFT training loop is intentionally dependency-gated and will
+    be wired behind this entrypoint in the next implementation slice.
+    """
+    try:
+        raw_config = _load_config(config_path)
+        runtime_config = normalize_llm_peft_config(raw_config)
+        metrics = empty_llm_metrics_payload(runtime_config)
+        _write_metrics(runtime_config, metrics)
+
+        print("LLM_PEFT_RUNTIME_SELECTED")
+        print(f"LLM_BASE_MODEL: {runtime_config.llm.base_model}")
+        print(f"SFT_DATASET: {runtime_config.sft.dataset_path}")
+        print(f"PEFT_ADAPTER: method={runtime_config.peft.method} rank={runtime_config.peft.rank}")
+
+        records = load_jsonl_sft_records(
+            runtime_config.sft.dataset_path,
+            data_format=runtime_config.sft.format,
+        )
+        client_splits = split_records_by_client(
+            records,
+            num_clients=runtime_config.federated.num_clients,
+            seed=runtime_config.federated.seed,
+        )
+        metrics["llm_dataset"] = {
+            "num_records": len(records),
+            "client_record_counts": [len(client_records) for client_records in client_splits],
+            "format": runtime_config.sft.format,
+            "prompt_template": runtime_config.sft.prompt_template,
+        }
+        _write_metrics(runtime_config, metrics)
+
+        missing = missing_optional_dependencies()
+        if missing:
+            print(
+                "LLM_PEFT_RUNTIME_BLOCKED: missing optional dependencies: "
+                + ", ".join(missing)
+            )
+            metrics["llm_runtime"] = {
+                "status": "blocked",
+                "reason": "missing_optional_dependencies",
+                "missing_dependencies": missing,
+            }
+            _write_metrics(runtime_config, metrics)
+            return False
+
+        trainer = LlmPeftTrainer(runtime_config)
+        global_adapter_state: dict[str, torch.Tensor] | None = None
+        rng = random.Random(runtime_config.federated.seed)
+        work_dir = _runtime_work_dir(runtime_config)
+        adapter_dir = _adapter_dir(runtime_config)
+        nonempty_client_ids = [idx for idx, client_records in enumerate(client_splits) if client_records]
+        if not nonempty_client_ids:
+            raise ValueError("No clients have SFT records")
+
+        for round_num in range(1, runtime_config.federated.num_rounds + 1):
+            started_at = time.perf_counter()
+            selected_ids = _select_clients(
+                nonempty_client_ids,
+                clients_per_round=runtime_config.federated.clients_per_round,
+                rng=rng,
+            )
+            print(f"LLM_PEFT_ROUND_START: round={round_num} clients={selected_ids}")
+            updates = []
+            for client_id in selected_ids:
+                update = trainer.train_client(
+                    client_id=client_id,
+                    records=client_splits[client_id],
+                    round_num=round_num,
+                    initial_adapter_state=global_adapter_state,
+                    output_dir=work_dir / f"round_{round_num}" / f"client_{client_id}",
+                )
+                updates.append(update)
+                _append_client_metrics(metrics, client_id=client_id, update=update)
+
+            global_adapter_state = aggregate_adapter_state_dicts(updates)
+            adapter_path = save_adapter_artifact(
+                adapter_dir / f"round_{round_num}_global_adapter.pt",
+                global_adapter_state,
+                metadata={
+                    "round": round_num,
+                    "selected_clients": selected_ids,
+                    "aggregation": runtime_config.federated.aggregation,
+                    "base_model": runtime_config.llm.base_model,
+                    "peft_method": runtime_config.peft.method,
+                },
+            )
+            elapsed = max(time.perf_counter() - started_at, 1e-9)
+            total_tokens = sum(update.num_tokens for update in updates)
+            train_loss = _weighted_train_loss(updates)
+            append_llm_round_metrics(
+                metrics,
+                round_num=round_num,
+                train_loss=train_loss,
+                token_throughput=total_tokens / elapsed,
+                adapter_size_bytes=adapter_state_size_bytes(global_adapter_state),
+            )
+            metrics["llm_runtime"] = {
+                "status": "running",
+                "last_round": round_num,
+                "latest_adapter_path": str(adapter_path),
+            }
+            _write_metrics(runtime_config, metrics)
+            print(f"LLM_PEFT_ROUND_DONE: round={round_num} train_loss={train_loss:.6f}")
+
+        metrics["llm_runtime"] = {
+            "status": "completed",
+            "completed_rounds": runtime_config.federated.num_rounds,
+            "latest_adapter_path": str(adapter_dir / f"round_{runtime_config.federated.num_rounds}_global_adapter.pt"),
+        }
+        _write_metrics(runtime_config, metrics)
+        print("LLM_PEFT_RUNTIME_COMPLETED")
+        return True
+    except Exception as exc:
+        print(f"LLM_PEFT_RUNTIME_FAILED: {exc}")
+        return False
+
+
+def _load_config(path: Path) -> dict[str, Any]:
+    loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if loaded is None:
+        return {}
+    if not isinstance(loaded, dict):
+        raise ValueError("Config must be a YAML/JSON object")
+    return loaded
+
+
+def _write_metrics(config: LlmPeftRuntimeConfig, payload: dict[str, Any]) -> None:
+    result_path = _result_path(config)
+    result_path.parent.mkdir(parents=True, exist_ok=True)
+    result_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _result_path(config: LlmPeftRuntimeConfig) -> Path:
+    override_name = os.environ.get("FIGARO_RESULTS_FILE", "").strip()
+    if override_name:
+        return PROJECT_ROOT / config.results_dir / Path(override_name).name
+    return PROJECT_ROOT / config.results_dir / "live_results_llm_peft.json"
+
+
+def _runtime_work_dir(config: LlmPeftRuntimeConfig) -> Path:
+    path = PROJECT_ROOT / config.results_dir / "llm_peft_work"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _adapter_dir(config: LlmPeftRuntimeConfig) -> Path:
+    path = PROJECT_ROOT / config.results_dir / "llm_peft_adapters"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _select_clients(client_ids: list[int], *, clients_per_round: int, rng: random.Random) -> list[int]:
+    selected_count = min(clients_per_round, len(client_ids))
+    return sorted(rng.sample(client_ids, selected_count))
+
+
+def _append_client_metrics(metrics: dict[str, Any], *, client_id: int, update) -> None:
+    client_key = f"client_{client_id}"
+    clients = metrics.setdefault("client_results", {})
+    series = clients.setdefault(
+        client_key,
+        {"train_loss": [], "train_acc": [], "test_loss": [], "test_acc": []},
+    )
+    train_loss = float(update.metrics.get("train_loss", 0.0))
+    series["train_loss"].append(train_loss)
+    series["train_acc"].append(0.0)
+    series["test_loss"].append(0.0)
+    series["test_acc"].append(0.0)
+
+
+def _weighted_train_loss(updates) -> float:
+    total_examples = sum(max(0, int(update.num_examples)) for update in updates)
+    if total_examples <= 0:
+        return 0.0
+    weighted = 0.0
+    for update in updates:
+        weighted += float(update.metrics.get("train_loss", 0.0)) * max(0, int(update.num_examples))
+    return weighted / total_examples

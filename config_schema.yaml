@@ -1,3 +1,27 @@
+task:
+  role: "server"
+  ui:
+    label: "Task"
+    group: "Core"
+  type:
+    type: "select"
+    options: ["classic_fl", "llm_peft_sft"]
+    default: "classic_fl"
+    ui:
+      label: "Training route"
+      featured: true
+      group: "Core"
+      prompt_hint: "Choose the runtime family for this experiment."
+      options:
+        classic_fl:
+          label: "Classic FL"
+          description: "Executable runtime for the current CNN/ResNet/TextCNN-style federated experiments."
+        llm_peft_sft:
+          label: "LLM PEFT SFT"
+          badge: "planned"
+          disabled: true
+          description: "Phase 2 route for federated LoRA/PEFT fine-tuning; runtime implementation is in progress."
+
 dataset:
   role: "server"
   ui:
@@ -72,6 +96,166 @@ model:
     default: 10
     ui:
       label: "Number of classes"
+
+llm:
+  role: "server"
+  depends_on: "task.type == llm_peft_sft"
+  ui:
+    label: "LLM"
+    group: "LLM PEFT"
+  base_model:
+    type: "text"
+    default: "Qwen/Qwen2.5-0.5B-Instruct"
+    ui:
+      label: "Base model"
+      featured: true
+      group: "LLM PEFT"
+      prompt_hint: "Hugging Face model id or local path for the frozen base model."
+  tokenizer:
+    type: "text"
+    default: "auto"
+    ui:
+      label: "Tokenizer"
+      prompt_hint: "Use 'auto' to load the tokenizer from the base model."
+  max_seq_length:
+    type: "number"
+    min: 128
+    max: 8192
+    default: 1024
+    ui:
+      label: "Max sequence length"
+      featured: true
+      group: "LLM PEFT"
+  precision:
+    type: "select"
+    options: ["fp32", "fp16", "bf16"]
+    default: "bf16"
+    ui:
+      label: "Precision"
+      options:
+        fp32:
+          label: "FP32"
+        fp16:
+          label: "FP16"
+        bf16:
+          label: "BF16"
+
+sft:
+  role: "server"
+  depends_on: "task.type == llm_peft_sft"
+  ui:
+    label: "SFT Dataset"
+    group: "LLM PEFT"
+  dataset_path:
+    type: "text"
+    default: "./datasets/sft/train.jsonl"
+    ui:
+      label: "Dataset path"
+      featured: true
+      group: "LLM PEFT"
+      prompt_hint: "Path to JSONL supervised fine-tuning data."
+  format:
+    type: "select"
+    options: ["prompt_completion", "messages"]
+    default: "prompt_completion"
+    ui:
+      label: "Dataset format"
+      featured: true
+      group: "LLM PEFT"
+      options:
+        prompt_completion:
+          label: "Prompt/Completion"
+        messages:
+          label: "Messages"
+  prompt_template:
+    type: "select"
+    options: ["plain", "chatml"]
+    default: "plain"
+    ui:
+      label: "Prompt template"
+  per_device_train_batch_size:
+    type: "number"
+    min: 1
+    max: 128
+    default: 1
+    ui:
+      label: "Batch size"
+      featured: true
+      group: "LLM PEFT"
+      prompt_hint: "Per-device SFT batch size for each federated client."
+  gradient_accumulation_steps:
+    type: "number"
+    min: 1
+    max: 128
+    default: 1
+    ui:
+      label: "Gradient accumulation"
+      featured: true
+      group: "LLM PEFT"
+
+peft:
+  role: "server"
+  depends_on: "task.type == llm_peft_sft"
+  ui:
+    label: "PEFT Adapter"
+    group: "LLM PEFT"
+  method:
+    type: "select"
+    options: ["lora"]
+    default: "lora"
+    ui:
+      label: "PEFT method"
+  rank:
+    type: "number"
+    min: 1
+    max: 256
+    default: 8
+    ui:
+      label: "LoRA rank"
+      featured: true
+      group: "LLM PEFT"
+  alpha:
+    type: "number"
+    min: 1
+    max: 512
+    default: 16
+    ui:
+      label: "LoRA alpha"
+      featured: true
+      group: "LLM PEFT"
+  dropout:
+    type: "number"
+    min: 0
+    max: 1
+    step: 0.01
+    default: 0.05
+    ui:
+      label: "LoRA dropout"
+  target_modules:
+    type: "text"
+    default: "q_proj,v_proj"
+    ui:
+      label: "Target modules"
+      prompt_hint: "Comma-separated module names for LoRA injection."
+  quantization:
+    type: "select"
+    options: ["none", "int8", "nf4_4bit"]
+    default: "none"
+    ui:
+      label: "Quantization"
+      options:
+        none:
+          label: "None"
+        int8:
+          label: "Int8"
+          badge: "planned"
+          disabled: true
+          description: "Reserved for the QLoRA runtime milestone."
+        nf4_4bit:
+          label: "NF4 4-bit"
+          badge: "planned"
+          disabled: true
+          description: "Reserved for the QLoRA runtime milestone."
 
 federated:
   role: "server"

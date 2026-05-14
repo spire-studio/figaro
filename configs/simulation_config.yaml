@@ -1,3 +1,5 @@
+task:
+  type: classic_fl
 dataset:
   name: CIFAR-10
   data_dir: ./datasets

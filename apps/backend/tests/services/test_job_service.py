@@ -6,6 +6,7 @@ from app.services.simulation.job_service import SimulationJobService
 
 def test_normalize_simulation_config_public_api_returns_invariants():
     normalized = SimulationJobService.normalize_simulation_config({})
+    assert normalized["task"]["type"] == "classic_fl"
     assert normalized["system"]["mode"] == "simulation"
     assert normalized["system"]["node_role"] == "server"
 
@@ -49,6 +50,20 @@ def test_normalize_simulation_config_rejects_incompatible_model():
                 "model": {"name": "ResNet18"},
             }
         )
+
+
+def test_normalize_simulation_config_bypasses_classic_compatibility_for_llm_peft_route():
+    normalized = SimulationJobService.normalize_simulation_config(
+        {
+            "task": {"type": "llm_peft_sft"},
+            "dataset": {"name": "AG News"},
+            "model": {"name": "ResNet18"},
+        }
+    )
+
+    assert normalized["task"]["type"] == "llm_peft_sft"
+    assert normalized["dataset"]["name"] == "AG News"
+    assert normalized["model"]["name"] == "ResNet18"
 
 
 def test_normalize_simulation_config_rejects_ckks_with_sparsification():

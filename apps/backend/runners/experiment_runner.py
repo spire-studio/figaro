@@ -9,7 +9,7 @@ from typing import Any
 
 import yaml
 
-from core_runtime import FederatedLearningFramework
+from runtime_dispatcher import run_runtime
 
 
 def _set_value_by_path(obj: dict[str, Any], path: str, value: Any) -> None:
@@ -49,8 +49,7 @@ def _apply_runtime_profile(config: dict[str, Any], *, mode: str, role: str | Non
 
 
 def _run_framework(config_path: Path) -> int:
-    framework = FederatedLearningFramework(config_path=str(config_path))
-    return 0 if framework.run() else 1
+    return 0 if run_runtime(config_path) else 1
 
 
 def main() -> int:

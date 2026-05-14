@@ -21,6 +21,16 @@ export type RunMetrics = {
     global_loss: number[];
     global_accuracy: number[];
   };
+  llm_results?: {
+    rounds: number[];
+    train_loss: number[];
+    validation_loss: number[];
+    perplexity: number[];
+    token_throughput: number[];
+    adapter_size_bytes: number[];
+  };
+  llm_dataset?: Record<string, unknown>;
+  llm_runtime?: Record<string, unknown>;
   client_results: Record<string, RunClientMetricSeries>;
 };
 

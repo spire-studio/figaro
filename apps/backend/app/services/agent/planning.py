@@ -48,6 +48,7 @@ def build_initial_config(schema: dict[str, Any]) -> dict[str, Any]:
     """
     if not schema:
         return {
+            "task": {"type": "classic_fl"},
             "dataset": {"name": "CIFAR-10", "distribution": "non_iid", "alpha": 0.5},
             "model": {"name": "Auto"},
             "federated": {

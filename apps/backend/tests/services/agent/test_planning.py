@@ -45,6 +45,7 @@ def test_build_initial_config_uses_schema_defaults():
 
 def test_build_initial_config_hardcoded_defaults_on_empty_schema():
     cfg = build_initial_config({})
+    assert cfg["task"]["type"] == "classic_fl"
     assert cfg["dataset"]["name"] == "CIFAR-10"
     assert cfg["model"]["name"] == "Auto"
     assert cfg["federated"]["num_clients"] == 3
