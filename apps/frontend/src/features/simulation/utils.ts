@@ -86,6 +86,17 @@ export const EMPTY_RUN_METRICS: RunMetrics = {
     global_loss: [],
     global_accuracy: [],
   },
+  llm_results: {
+    rounds: [],
+    train_loss: [],
+    validation_loss: [],
+    perplexity: [],
+    token_throughput: [],
+    adapter_size_bytes: [],
+  },
+  llm_dataset: {},
+  llm_runtime: {},
+  llm_artifacts: [],
   client_results: {},
 };
 

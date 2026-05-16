@@ -10,6 +10,7 @@ from copy import deepcopy
 from typing import Any
 
 from app.core import exceptions
+from app.services.simulation.compatibility import validate_llm_simulation_mode_or_raise
 from app.services.simulation.job_service import SimulationJobService
 
 
@@ -41,6 +42,7 @@ class DistributedConfigService:
         expected_clients = cls.extract_expected_clients(normalized)
         cls._set_value_by_path(normalized, "federated.num_clients", expected_clients)
         cls._set_value_by_path(normalized, "dataset.num_clients", expected_clients)
+        validate_llm_simulation_mode_or_raise(normalized)
         return normalized
 
 
@@ -86,6 +88,7 @@ class DistributedConfigService:
         cls._set_value_by_path(normalized, "distributed.client_id", assigned_participant_id)
         cls._set_value_by_path(normalized, "federated.num_clients", expected_clients)
         cls._set_value_by_path(normalized, "dataset.num_clients", expected_clients)
+        validate_llm_simulation_mode_or_raise(normalized)
         return normalized
 
 

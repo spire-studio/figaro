@@ -282,6 +282,7 @@ export function useAgentController(): AgentPageProps {
       "Compare non-IID alpha=0.1, 0.3, 0.5 on the selected dataset",
       "Compare 10 clients vs 20 clients with FedAvg",
       "Test training rounds 10, 20, 50 on accuracy",
+      "Run LLM PEFT SFT with LoRA rank 8 and rank 16 on a JSONL prompt/completion dataset",
     ],
     [],
   );

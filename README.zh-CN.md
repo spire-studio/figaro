@@ -195,7 +195,8 @@ figaro/
 │   ├── models/               # CNN / ResNet
 │   ├── data/                 # 数据加载与划分
 │   ├── privacy/              # CKKS 加密
-│   └── compression/          # Top-K 稀疏化
+│   ├── compression/          # Top-K 稀疏化
+│   └── llm/                  # LLM PEFT 运行时工具
 ├── configs/                  # 实验配置
 ├── scripts/                  # Docker 部署脚本
 └── .github/workflows/        # CI 流水线
@@ -214,11 +215,13 @@ figaro/
 - [x] **高阶实验管理** —— 支持按指标、超参等多维度搜索过滤实验历史，支持配置文件版本控制与 Diff 差异对比。
 
 **Phase 2：基于现有框架的 LLM 联邦 PEFT 微调支持**
-- [ ] **LLM/PEFT 配置面扩展** —— 在现有 `config_schema`、Agent 规划与兼容性校验中加入任务类型、基础模型、Tokenizer、Prompt 模板、数据格式和 Adapter 超参。
-- [ ] **Hugging Face 模型与数据适配** —— 在当前 `ModelManager` 与数据加载管线后扩展 Causal LM / 指令微调模型适配层，支持 JSONL 等 SFT 数据格式解析。
-- [ ] **PEFT 微调运行时** —— 在现有单机仿真与分布式 Runner 中加入 LoRA 优先的训练路径，并预留 QLoRA 量化选项与客户端显存/设备控制。
-- [ ] **Adapter 权重联邦聚合** —— 聚合和持久化 PEFT Adapter 权重，而不是全量模型 checkpoint，并记录可复现/续跑每轮训练所需的元数据。
-- [ ] **LLM 指标与结果追踪** —— 在现有 Agent 结果视图中追踪 training loss、validation loss、perplexity、token throughput 与 Adapter checkpoint lineage 等指标。
+- [x] **单机仿真 LoRA/PEFT SFT 路线** —— `task.type=llm_peft_sft` 会分发到专用的单机仿真运行时，加载 Hugging Face 或本地 Causal LM，注入 LoRA Adapter，并基于 JSONL 数据执行每个客户端的监督微调。
+- [x] **LLM/PEFT 配置面扩展** —— `config_schema` 与运行时规范化已覆盖基础模型、Tokenizer、最大序列长度、精度、SFT 数据路径/格式、Prompt 模板、LoRA 超参、目标模块、量化模式和 Adapter 续跑路径。
+- [x] **JSONL SFT 数据管线** —— 支持 prompt/completion 与 messages 两类 JSONL 格式，支持确定性的客户端数据切分，并提供 plain/chat 风格的文本渲染。
+- [x] **Adapter 权重联邦聚合** —— 按客户端样本数聚合 LoRA/PEFT Adapter Tensor，持久化全局 Adapter 产物，记录 SHA-256 血缘，并支持从历史全局 Adapter warm start 续跑。
+- [x] **LLM 运行依赖与指标** —— 主项目依赖已包含 `transformers`、`peft`、`accelerate`、`safetensors`、`bitsandbytes`；后端指标已包含 train loss、perplexity、token throughput、adapter size、运行状态、数据摘要和 Adapter artifact lineage。
+- [ ] **前端与 Agent 的 LLM 运行体验** —— 在 schema-driven UI 与 Agent 规划流中开放 LLM 路线，并补齐 LLM 指标曲线和 Adapter 产物视图。
+- [ ] **评测与 Smoke 配置** —— 增加验证集、evaluation loss/perplexity 计算，以及可复现的 tiny-model LLM PEFT smoke config。
 
 **Phase 3：平台化与企业级协作**
 - [ ] **多租户与细粒度权限** —— 构建多用户隔离的项目空间 (Workspaces)，引入基于角色的访问控制 (RBAC) 和完整的操作审计日志。

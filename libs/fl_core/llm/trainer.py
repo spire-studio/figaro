@@ -12,7 +12,7 @@ from torch.utils.data import Dataset
 from .aggregation import AdapterClientUpdate
 from .config import LlmPeftRuntimeConfig
 from .data import SftRecord, format_sft_record_text
-from .modeling import require_optional_dependencies
+from .modeling import require_llm_runtime_dependencies
 
 
 class TokenizedSftDataset(Dataset):
@@ -74,10 +74,10 @@ class LlmPeftTrainer:
     config: LlmPeftRuntimeConfig
 
     def ensure_ready(self) -> None:
-        """Validate that optional runtime dependencies are installed."""
-        require_optional_dependencies()
+        """Validate that LLM runtime dependencies are installed."""
+        require_llm_runtime_dependencies()
         if self.config.peft.quantization != "none" and importlib.util.find_spec("bitsandbytes") is None:
-            raise RuntimeError("Missing optional QLoRA dependency: bitsandbytes")
+            raise RuntimeError("Missing QLoRA runtime dependency: bitsandbytes")
 
     def train_client(
         self,

@@ -129,6 +129,18 @@ def test_update_job_config_rejects_invalid_payload():
     asyncio.run(_run())
 
 
+def test_normalize_server_config_rejects_llm_peft_route():
+    service = DistributedJobService(session=_DummySession())  # type: ignore[arg-type]
+
+    with pytest.raises(exceptions.BadRequestError, match="simulation mode only"):
+        service.config_service.normalize_server_config(
+            {
+                "task": {"type": "llm_peft_sft"},
+                "federated": {"num_clients": 2},
+            }
+        )
+
+
 def test_update_job_config_normalizes_and_persists(monkeypatch):
     async def _run():
         session = _DummySession()

@@ -18,7 +18,7 @@ from app.models.agent import AgentConfigVersion, AgentOptimizationJob, AgentOpti
 from app.repositories.agent import AgentConfigVersionRepository, AgentOptimizationJobRepository
 
 from .memory import compute_config_diff
-from .summary import get_last_global_accuracy
+from .summary import get_agent_run_score
 
 
 class AgentOptimizationHistoryService:
@@ -129,7 +129,7 @@ class AgentOptimizationHistoryService:
         status = AgentOptimizationJobStatus(str(snapshot.get("status", AgentOptimizationJobStatus.QUEUED.value)))
         finished_at = snapshot.get("finished_at") if snapshot.get("finished_at") is not None else ...
         best_metrics = snapshot.get("best_metrics")
-        best_score = get_last_global_accuracy(best_metrics) if isinstance(best_metrics, dict) else None
+        best_score = get_agent_run_score(best_metrics) if isinstance(best_metrics, dict) else None
 
         try:
             safe_snapshot = self._to_json_safe(snapshot)

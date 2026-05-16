@@ -94,11 +94,19 @@ export function dynamicOptionState(
   properties: Record<string, unknown>,
 ): OptionState {
   const optionText = String(option);
+  const systemMode = stringAt(properties, "system.mode", "simulation");
   const aggregation = stringAt(properties, "federated.aggregation", "fedavg");
   const ckksEnabled = boolAt(properties, "privacy.homomorphic_encryption.enable");
   const dpEnabled = boolAt(properties, "privacy.differential_privacy.enable");
   const compressionEnabled = boolAt(properties, "compression.sparsification.enable");
   const secureAggEnabled = boolAt(properties, "privacy.secure_aggregation.enable");
+
+  if (path === "task.type" && optionText === "llm_peft_sft" && systemMode === "distributed") {
+    return {
+      disabled: true,
+      reason: "LLM PEFT is currently supported in simulation mode only.",
+    };
+  }
 
   if (path === "model.name") {
     const datasetName = stringAt(properties, "dataset.name", "CIFAR-10");

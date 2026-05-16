@@ -26,6 +26,9 @@ def test_agent_config_schema_endpoint_returns_ui_metadata(client):
     assert "FedAvgCNN" in payload["model"]["name"]["options"]
     assert "TextDNN" in payload["model"]["name"]["options"]
     assert "CharLSTM" in payload["model"]["name"]["options"]
+    llm_task_ui = payload["task"]["type"]["ui"]["options"]["llm_peft_sft"]
+    assert llm_task_ui["badge"] == "simulation"
+    assert "disabled" not in llm_task_ui
     aggregation_ui = payload["federated"]["aggregation"]["ui"]
     assert aggregation_ui["featured"] is True
     assert aggregation_ui["options"]["fedprox"]["disabled"] is True

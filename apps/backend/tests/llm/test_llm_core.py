@@ -13,6 +13,12 @@ if str(LIBS_DIR) not in sys.path:
     sys.path.insert(0, str(LIBS_DIR))
 
 from fl_core.llm.aggregation import AdapterClientUpdate, aggregate_adapter_state_dicts
+from fl_core.llm.artifacts import (
+    adapter_artifact_record,
+    load_adapter_artifact,
+    save_adapter_artifact,
+    sha256_file,
+)
 from fl_core.llm.config import normalize_llm_peft_config, parse_target_modules
 from fl_core.llm.data import SftRecord, format_sft_record_text, load_jsonl_sft_records, split_records_by_client
 from fl_core.llm.metrics import append_llm_round_metrics, empty_llm_metrics_payload
@@ -64,7 +70,11 @@ def _base_config(tmp_path: Path) -> dict:
 
 
 def test_normalize_llm_peft_config_parses_nested_sections(tmp_path):
-    normalized = normalize_llm_peft_config(_base_config(tmp_path))
+    resume_path = tmp_path / "adapter.pt"
+    config = _base_config(tmp_path)
+    config["peft"]["resume_adapter_path"] = str(resume_path)
+
+    normalized = normalize_llm_peft_config(config)
 
     assert normalized.task_type == "llm_peft_sft"
     assert normalized.llm.base_model == "Qwen/Qwen2.5-0.5B-Instruct"
@@ -72,6 +82,7 @@ def test_normalize_llm_peft_config_parses_nested_sections(tmp_path):
     assert normalized.sft.per_device_train_batch_size == 1
     assert normalized.sft.gradient_accumulation_steps == 1
     assert normalized.peft.target_modules == ("q_proj", "v_proj")
+    assert normalized.peft.resume_adapter_path == resume_path
     assert normalized.federated.num_clients == 2
 
 
@@ -133,6 +144,29 @@ def test_aggregate_adapter_state_dicts_rejects_shape_mismatch():
         aggregate_adapter_state_dicts([update_a, update_b])
 
 
+def test_adapter_artifact_round_trip_and_lineage_record(tmp_path):
+    artifact_path = save_adapter_artifact(
+        tmp_path / "adapter.pt",
+        {"lora_A": torch.tensor([1.0, 2.0])},
+        metadata={"round": 1},
+    )
+
+    adapter_state, metadata = load_adapter_artifact(artifact_path)
+    record = adapter_artifact_record(
+        artifact_path,
+        round_num=1,
+        size_bytes=8,
+        selected_clients=[0, 1],
+        parent_path="previous.pt",
+        parent_sha256="abc",
+    )
+
+    assert torch.allclose(adapter_state["lora_A"], torch.tensor([1.0, 2.0]))
+    assert metadata["round"] == 1
+    assert record["sha256"] == sha256_file(artifact_path)
+    assert record["parent_sha256"] == "abc"
+
+
 def test_empty_llm_metrics_payload_and_round_append(tmp_path):
     config = normalize_llm_peft_config(_base_config(tmp_path))
     payload = empty_llm_metrics_payload(config)
@@ -140,6 +174,7 @@ def test_empty_llm_metrics_payload_and_round_append(tmp_path):
 
     assert payload["experiment_info"]["basic"]["task_type"] == "llm_peft_sft"
     assert payload["llm_results"]["rounds"] == [1]
+    assert payload["llm_artifacts"] == []
     assert payload["llm_results"]["perplexity"][0] == pytest.approx(2.71828, rel=1e-4)
     assert payload["global_results"]["global_loss"] == [1.0]
 

@@ -32,6 +32,7 @@ class PeftAdapterConfig:
     alpha: int
     dropout: float
     target_modules: tuple[str, ...]
+    resume_adapter_path: Path | None
     quantization: str
 
 
@@ -109,6 +110,7 @@ def normalize_llm_peft_config(config: Mapping[str, Any]) -> LlmPeftRuntimeConfig
         alpha=_positive_int(peft_cfg.get("alpha", 16), "peft.alpha"),
         dropout=_bounded_float(peft_cfg.get("dropout", 0.05), "peft.dropout", minimum=0.0, maximum=1.0),
         target_modules=parse_target_modules(peft_cfg.get("target_modules", "q_proj,v_proj")),
+        resume_adapter_path=_optional_path(peft_cfg.get("resume_adapter_path")),
         quantization=_choice(peft_cfg.get("quantization", "none"), {"none", "int8", "nf4_4bit"}, "peft.quantization"),
     )
     federated = LlmFederatedConfig(
@@ -140,6 +142,15 @@ def normalize_llm_peft_config(config: Mapping[str, Any]) -> LlmPeftRuntimeConfig
 
 def _mapping(value: Any) -> Mapping[str, Any]:
     return value if isinstance(value, Mapping) else {}
+
+
+def _optional_path(value: Any) -> Path | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        stripped = value.strip()
+        return Path(stripped) if stripped else None
+    return Path(str(value))
 
 
 def _text(value: Any, path: str) -> str:

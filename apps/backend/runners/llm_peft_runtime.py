@@ -21,9 +21,15 @@ if str(FL_CORE_PARENT) not in sys.path:
 from fl_core.llm.config import LlmPeftRuntimeConfig, normalize_llm_peft_config
 from fl_core.llm.data import load_jsonl_sft_records, split_records_by_client
 from fl_core.llm.aggregation import aggregate_adapter_state_dicts
-from fl_core.llm.artifacts import adapter_state_size_bytes, save_adapter_artifact
+from fl_core.llm.artifacts import (
+    adapter_artifact_record,
+    adapter_state_size_bytes,
+    load_adapter_artifact,
+    save_adapter_artifact,
+    sha256_file,
+)
 from fl_core.llm.metrics import append_llm_round_metrics, empty_llm_metrics_payload
-from fl_core.llm.modeling import missing_optional_dependencies
+from fl_core.llm.modeling import missing_llm_runtime_dependencies
 from fl_core.llm.trainer import LlmPeftTrainer
 
 
@@ -36,8 +42,8 @@ def run_llm_peft_runtime(config_path: Path) -> bool:
     Bootstrap the Phase 2 LLM PEFT federated fine-tuning route.
 
     This route already owns config/data/metrics preparation. The heavy
-    Transformers/PEFT training loop is intentionally dependency-gated and will
-    be wired behind this entrypoint in the next implementation slice.
+    Transformers/PEFT training is routed through this entrypoint while keeping
+    a clear metrics record when the deployed runtime environment is incomplete.
     """
     try:
         raw_config = _load_config(config_path)
@@ -67,15 +73,15 @@ def run_llm_peft_runtime(config_path: Path) -> bool:
         }
         _write_metrics(runtime_config, metrics)
 
-        missing = missing_optional_dependencies()
+        missing = missing_llm_runtime_dependencies()
         if missing:
             print(
-                "LLM_PEFT_RUNTIME_BLOCKED: missing optional dependencies: "
+                "LLM_PEFT_RUNTIME_BLOCKED: missing LLM runtime dependencies: "
                 + ", ".join(missing)
             )
             metrics["llm_runtime"] = {
                 "status": "blocked",
-                "reason": "missing_optional_dependencies",
+                "reason": "missing_llm_runtime_dependencies",
                 "missing_dependencies": missing,
             }
             _write_metrics(runtime_config, metrics)
@@ -83,6 +89,22 @@ def run_llm_peft_runtime(config_path: Path) -> bool:
 
         trainer = LlmPeftTrainer(runtime_config)
         global_adapter_state: dict[str, torch.Tensor] | None = None
+        parent_adapter_path: str | None = None
+        parent_adapter_sha256: str | None = None
+        if runtime_config.peft.resume_adapter_path is not None:
+            resume_path = _resolve_runtime_path(runtime_config.peft.resume_adapter_path)
+            global_adapter_state, resume_metadata = load_adapter_artifact(resume_path)
+            parent_adapter_path = str(resume_path)
+            parent_adapter_sha256 = sha256_file(resume_path)
+            metrics["llm_runtime"] = {
+                "status": "resumed",
+                "resume_adapter_path": parent_adapter_path,
+                "resume_adapter_sha256": parent_adapter_sha256,
+                "resume_metadata": resume_metadata,
+            }
+            _write_metrics(runtime_config, metrics)
+            print(f"LLM_PEFT_RESUME_ADAPTER: {resume_path}")
+
         rng = random.Random(runtime_config.federated.seed)
         work_dir = _runtime_work_dir(runtime_config)
         adapter_dir = _adapter_dir(runtime_config)
@@ -111,6 +133,7 @@ def run_llm_peft_runtime(config_path: Path) -> bool:
                 _append_client_metrics(metrics, client_id=client_id, update=update)
 
             global_adapter_state = aggregate_adapter_state_dicts(updates)
+            adapter_size = adapter_state_size_bytes(global_adapter_state)
             adapter_path = save_adapter_artifact(
                 adapter_dir / f"round_{round_num}_global_adapter.pt",
                 global_adapter_state,
@@ -120,8 +143,21 @@ def run_llm_peft_runtime(config_path: Path) -> bool:
                     "aggregation": runtime_config.federated.aggregation,
                     "base_model": runtime_config.llm.base_model,
                     "peft_method": runtime_config.peft.method,
+                    "parent_adapter_path": parent_adapter_path,
+                    "parent_adapter_sha256": parent_adapter_sha256,
                 },
             )
+            artifact_record = adapter_artifact_record(
+                adapter_path,
+                round_num=round_num,
+                size_bytes=adapter_size,
+                selected_clients=selected_ids,
+                parent_path=parent_adapter_path,
+                parent_sha256=parent_adapter_sha256,
+            )
+            metrics.setdefault("llm_artifacts", []).append(artifact_record)
+            parent_adapter_path = artifact_record["path"]
+            parent_adapter_sha256 = artifact_record["sha256"]
             elapsed = max(time.perf_counter() - started_at, 1e-9)
             total_tokens = sum(update.num_tokens for update in updates)
             train_loss = _weighted_train_loss(updates)
@@ -130,12 +166,13 @@ def run_llm_peft_runtime(config_path: Path) -> bool:
                 round_num=round_num,
                 train_loss=train_loss,
                 token_throughput=total_tokens / elapsed,
-                adapter_size_bytes=adapter_state_size_bytes(global_adapter_state),
+                adapter_size_bytes=adapter_size,
             )
             metrics["llm_runtime"] = {
                 "status": "running",
                 "last_round": round_num,
-                "latest_adapter_path": str(adapter_path),
+                "latest_adapter_path": artifact_record["path"],
+                "latest_adapter_sha256": artifact_record["sha256"],
             }
             _write_metrics(runtime_config, metrics)
             print(f"LLM_PEFT_ROUND_DONE: round={round_num} train_loss={train_loss:.6f}")
@@ -143,7 +180,8 @@ def run_llm_peft_runtime(config_path: Path) -> bool:
         metrics["llm_runtime"] = {
             "status": "completed",
             "completed_rounds": runtime_config.federated.num_rounds,
-            "latest_adapter_path": str(adapter_dir / f"round_{runtime_config.federated.num_rounds}_global_adapter.pt"),
+            "latest_adapter_path": parent_adapter_path,
+            "latest_adapter_sha256": parent_adapter_sha256,
         }
         _write_metrics(runtime_config, metrics)
         print("LLM_PEFT_RUNTIME_COMPLETED")
@@ -185,6 +223,10 @@ def _adapter_dir(config: LlmPeftRuntimeConfig) -> Path:
     path = PROJECT_ROOT / config.results_dir / "llm_peft_adapters"
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def _resolve_runtime_path(path: Path) -> Path:
+    return path if path.is_absolute() else PROJECT_ROOT / path
 
 
 def _select_clients(client_ids: list[int], *, clients_per_round: int, rng: random.Random) -> list[int]:

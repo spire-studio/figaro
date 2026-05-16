@@ -11,7 +11,7 @@ RUNNERS_DIR = Path(__file__).resolve().parents[2] / "runners"
 if str(RUNNERS_DIR) not in sys.path:
     sys.path.insert(0, str(RUNNERS_DIR))
 
-from runtime_dispatcher import get_task_type, run_runtime  # noqa: E402
+from runtime_dispatcher import get_runtime_mode, get_task_type, run_runtime  # noqa: E402
 
 
 def _write_config(tmp_path: Path, config: dict) -> Path:
@@ -23,6 +23,11 @@ def _write_config(tmp_path: Path, config: dict) -> Path:
 def test_get_task_type_defaults_legacy_configs_to_classic_fl():
     assert get_task_type({}) == "classic_fl"
     assert get_task_type({"task": {}}) == "classic_fl"
+
+
+def test_get_runtime_mode_defaults_legacy_configs_to_simulation():
+    assert get_runtime_mode({}) == "simulation"
+    assert get_runtime_mode({"system": {}}) == "simulation"
 
 
 def test_run_runtime_dispatches_classic_route(tmp_path, monkeypatch):
@@ -55,6 +60,19 @@ def test_run_runtime_dispatches_llm_peft_route(tmp_path, monkeypatch):
 
     assert run_runtime(config_path) is False
     assert called["path"] == config_path
+
+
+def test_run_runtime_rejects_llm_peft_distributed_route(tmp_path):
+    config_path = _write_config(
+        tmp_path,
+        {
+            "task": {"type": "llm_peft_sft"},
+            "system": {"mode": "distributed"},
+        },
+    )
+
+    with pytest.raises(ValueError, match="simulation mode only"):
+        run_runtime(config_path)
 
 
 def test_run_runtime_rejects_unknown_task_type(tmp_path):

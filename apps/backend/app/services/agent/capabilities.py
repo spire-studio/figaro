@@ -20,4 +20,15 @@ def get_platform_capabilities(project_root: Path | None = None) -> Dict[str, Any
     rules. The project_root argument is kept for compatibility with older tests.
     """
     _ = project_root
-    return runtime_capabilities()
+    capabilities = runtime_capabilities()
+    capabilities["training_routes"] = {
+        "classic_fl": {
+            "modes": ["simulation", "distributed"],
+            "description": "Classic federated learning route for the built-in small-model datasets.",
+        },
+        "llm_peft_sft": {
+            "modes": ["simulation"],
+            "description": "Simulation-only route for federated LoRA/PEFT supervised fine-tuning on JSONL SFT data.",
+        },
+    }
+    return capabilities

@@ -194,7 +194,8 @@ figaro/
 │   ├── models/               # CNN / ResNet
 │   ├── data/                 # Data loading & partitioning
 │   ├── privacy/              # CKKS encryption
-│   └── compression/          # Top-K sparsification
+│   ├── compression/          # Top-K sparsification
+│   └── llm/                  # LLM PEFT runtime utilities
 ├── configs/                  # Experiment configs
 ├── scripts/                  # Docker deployment scripts
 └── .github/workflows/        # CI pipelines
@@ -213,11 +214,13 @@ PRs welcome! Figaro is meant to be a readable, research-friendly FL platform.
 - [x] **Advanced Experiment Tracking** — Multi-dimensional search filtering (by metrics, hyperparameters, status) and configuration version control (diffing).
 
 **Phase 2: LLM Federated PEFT Fine-Tuning**
-- [ ] **LLM/PEFT Configuration Surface** — Extend the existing `config_schema`, Agent planner, and compatibility checks with LLM task type, base model, tokenizer, prompt template, dataset format, and adapter hyperparameters.
-- [ ] **Hugging Face Model & Dataset Adapters** — Add adapters behind the current `ModelManager` and data loading pipeline for causal LM / instruction tuning models and JSONL-style supervised fine-tuning datasets.
-- [ ] **PEFT Training Runtime** — Add a LoRA-first training path to the existing simulation/distributed runners, with QLoRA-ready quantization options and per-client memory/device controls.
-- [ ] **Adapter-Only Federated Aggregation** — Aggregate and persist PEFT adapter weights instead of full model checkpoints, including metadata needed to replay or resume each federated round.
-- [ ] **LLM Evaluation & Result Tracking** — Track LLM-specific metrics such as training loss, validation loss, perplexity, token throughput, and adapter checkpoint lineage in the existing Agent results views.
+- [x] **Simulation LoRA/PEFT SFT Route** — `task.type=llm_peft_sft` dispatches to a dedicated single-machine simulation runtime that loads a Hugging Face or local causal LM, applies LoRA adapters, and runs per-client supervised fine-tuning from JSONL data.
+- [x] **LLM/PEFT Configuration Surface** — `config_schema` and runtime normalization now cover base model, tokenizer, max sequence length, precision, SFT dataset path/format, prompt template, LoRA hyperparameters, target modules, quantization mode, and adapter resume path.
+- [x] **JSONL SFT Data Pipeline** — Supports prompt/completion and chat messages JSONL formats, deterministic client splitting, and prompt rendering for plain/chat-style templates.
+- [x] **Adapter-Only Federated Aggregation** — Aggregates LoRA/PEFT adapter tensors by client example count, persists global adapter artifacts, records SHA-256 lineage, and supports warm-starting from a previous global adapter.
+- [x] **LLM Runtime Dependencies & Metrics** — Core project dependencies include `transformers`, `peft`, `accelerate`, `safetensors`, and `bitsandbytes`; backend metrics include train loss, perplexity, token throughput, adapter size, runtime status, dataset summary, and adapter artifact lineage.
+- [ ] **Frontend & Agent UX for LLM Runs** — Expose the LLM route in the schema-driven UI/Agent planning flow and add LLM-specific result charts/artifact views.
+- [ ] **Evaluation Harness** — Add validation datasets, evaluation loss/perplexity calculation, and smoke configs for reproducible tiny-model LLM PEFT runs.
 
 **Phase 3: Enterprise & Team Collaboration**
 - [ ] **Multi-Tenant Workspaces** — Isolated project environments with Role-Based Access Control (RBAC) and comprehensive audit logging.

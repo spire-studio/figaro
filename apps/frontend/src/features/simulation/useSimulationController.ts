@@ -777,6 +777,7 @@ export function useSimulationController(): SimulationPageProps {
     requestDeleteJob,
     runLogs,
     runLogsRef,
+    runMetrics,
     runRounds,
     runStatusVariant,
     runs,

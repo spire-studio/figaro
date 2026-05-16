@@ -14,8 +14,8 @@ import { getValueByPath } from "../../simulation/utils";
 import {
   booleanDisabledForConfig,
   booleanDisableReasonForConfig,
+  agentFieldVisibleForConfig,
   buildAgentConfig,
-  checkDependency,
   coerceFieldValue,
   collectAgentSchemaFields,
   fieldCompatibilityHint,
@@ -50,10 +50,10 @@ export function AgentExperimentStudio(props: AgentPageProps) {
     [configConstraints, configSchema],
   );
   const chips = useMemo(
-    () => selectedConstraintChips(configSchema, configConstraints),
-    [configConstraints, configSchema],
+    () => selectedConstraintChips(configSchema, configConstraints, effectiveConfig),
+    [configConstraints, configSchema, effectiveConfig],
   );
-  const visibleFields = fields.filter((field) => checkDependency(effectiveConfig, field.definition.depends_on));
+  const visibleFields = fields.filter((field) => agentFieldVisibleForConfig(field, effectiveConfig));
 
   return (
     <div className="flex h-full w-full flex-col items-center justify-center space-y-6 max-w-3xl mx-auto py-12">
@@ -77,7 +77,7 @@ export function AgentExperimentStudio(props: AgentPageProps) {
             <label className="text-sm font-medium">Experiment Goal</label>
             <Textarea 
               className="min-h-[120px] text-base resize-none"
-              placeholder="E.g., Compare FedAvg vs FedProx on CIFAR-10 with high data heterogeneity (alpha=0.1)..."
+              placeholder="E.g., Compare FedAvg on CIFAR-10, or run LLM PEFT SFT with LoRA rank 8 on a JSONL dataset..."
               value={goal}
               onChange={(e) => setGoal(e.target.value)}
             />

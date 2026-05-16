@@ -18,12 +18,12 @@ task:
           description: "Executable runtime for the current CNN/ResNet/TextCNN-style federated experiments."
         llm_peft_sft:
           label: "LLM PEFT SFT"
-          badge: "planned"
-          disabled: true
-          description: "Phase 2 route for federated LoRA/PEFT fine-tuning; runtime implementation is in progress."
+          badge: "simulation"
+          description: "Executable simulation route for federated LoRA/PEFT supervised fine-tuning."
 
 dataset:
   role: "server"
+  depends_on: "task.type == classic_fl"
   ui:
     label: "Dataset"
     group: "Data"
@@ -74,6 +74,7 @@ dataset:
 
 model:
   role: "server"
+  depends_on: "task.type == classic_fl"
   ui:
     label: "Model"
     group: "Model"
@@ -237,6 +238,12 @@ peft:
     ui:
       label: "Target modules"
       prompt_hint: "Comma-separated module names for LoRA injection."
+  resume_adapter_path:
+    type: "text"
+    default: ""
+    ui:
+      label: "Resume adapter path"
+      prompt_hint: "Optional path to a saved global adapter artifact for warm-starting this run."
   quantization:
     type: "select"
     options: ["none", "int8", "nf4_4bit"]
@@ -346,6 +353,7 @@ federated:
 
 compression:
   role: "server"
+  depends_on: "task.type == classic_fl"
   ui:
     label: "Compression"
     group: "Advanced"
@@ -401,6 +409,7 @@ compression:
 
 privacy:
   role: "server"
+  depends_on: "task.type == classic_fl"
   ui:
     label: "Privacy"
     group: "Advanced"

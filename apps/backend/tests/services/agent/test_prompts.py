@@ -17,6 +17,7 @@ def test_build_plan_system_instructions_includes_global_prompt():
     instructions = build_plan_system_instructions("test alpha=0.1,0.3")
     assert "User experiment request" in instructions
     assert "test alpha=0.1,0.3" in instructions
+    assert "LLM PEFT simulation" in instructions
 
 
 def test_build_plan_prompt_includes_history_and_context():

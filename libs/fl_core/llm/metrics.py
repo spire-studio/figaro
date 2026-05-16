@@ -45,6 +45,9 @@ def empty_llm_metrics_payload(config: LlmPeftRuntimeConfig | None = None) -> dic
             "token_throughput": [],
             "adapter_size_bytes": [],
         },
+        "llm_dataset": {},
+        "llm_runtime": {},
+        "llm_artifacts": [],
         "client_results": {},
     }
 

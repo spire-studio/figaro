@@ -17,8 +17,8 @@ import { getValueByPath, isRecord } from "../../simulation/utils";
 import {
   booleanDisabledForConfig,
   booleanDisableReasonForConfig,
+  agentFieldVisibleForConfig,
   buildAgentConfig,
-  checkDependency,
   coerceFieldValue,
   collectAgentSchemaFields,
   fieldCompatibilityHint,
@@ -258,7 +258,7 @@ function ExperimentCard({
   schema: Record<string, unknown> | null;
 }) {
   const fullConfig = buildAgentConfig(schema, experiment.config_patch ?? {});
-  const visibleFields = fields.filter((field) => checkDependency(fullConfig, field.definition.depends_on));
+  const visibleFields = fields.filter((field) => agentFieldVisibleForConfig(field, fullConfig));
   const grouped = visibleFields.reduce<Record<string, AgentSchemaField[]>>((acc, field) => {
     const section = field.section;
     acc[section] = [...(acc[section] ?? []), field];
@@ -267,7 +267,7 @@ function ExperimentCard({
   const jsonString = experiment._rawJsonString ?? JSON.stringify(experiment.config_patch ?? {}, null, 2);
   const disabledErrors = validateDisabledOptions(fullConfig, schema);
   const summaryFields = fields
-    .filter((field) => field.featured)
+    .filter((field) => field.featured && agentFieldVisibleForConfig(field, fullConfig))
     .map((field) => ({ field, value: getValueByPath(fullConfig, field.path) }))
     .filter((item) => item.value !== undefined)
     .slice(0, 8);

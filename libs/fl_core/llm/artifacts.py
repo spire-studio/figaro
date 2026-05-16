@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -45,3 +46,33 @@ def adapter_state_size_bytes(adapter_state: Mapping[str, torch.Tensor]) -> int:
     """Return the total tensor storage size for an adapter state dict."""
     return sum(tensor.numel() * tensor.element_size() for tensor in adapter_state.values())
 
+
+def sha256_file(path: str | Path) -> str:
+    """Return a SHA-256 digest for an artifact file."""
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as file_obj:
+        for chunk in iter(lambda: file_obj.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def adapter_artifact_record(
+    path: str | Path,
+    *,
+    round_num: int,
+    size_bytes: int,
+    selected_clients: list[int],
+    parent_path: str | None = None,
+    parent_sha256: str | None = None,
+) -> dict[str, Any]:
+    """Build serializable lineage metadata for one global adapter artifact."""
+    resolved = Path(path)
+    return {
+        "round": int(round_num),
+        "path": str(resolved),
+        "sha256": sha256_file(resolved),
+        "size_bytes": int(size_bytes),
+        "selected_clients": list(selected_clients),
+        "parent_path": parent_path,
+        "parent_sha256": parent_sha256,
+    }

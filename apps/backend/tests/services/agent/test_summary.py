@@ -2,7 +2,9 @@ from app.services.agent.state import AgentState, ExperimentRecord
 from app.services.agent.summary import (
     build_results_table,
     build_summary_text,
+    get_agent_run_score,
     get_last_global_accuracy,
+    get_last_llm_train_loss,
 )
 
 
@@ -14,6 +16,12 @@ def test_get_last_global_accuracy_returns_last_value():
 def test_get_last_global_accuracy_returns_none_for_empty():
     assert get_last_global_accuracy({}) is None
     assert get_last_global_accuracy({"global_results": {}}) is None
+
+
+def test_agent_run_score_uses_negative_llm_train_loss():
+    metrics = {"llm_results": {"train_loss": [1.2, 0.8]}}
+    assert get_last_llm_train_loss(metrics) == 0.8
+    assert get_agent_run_score(metrics) == -0.8
 
 
 def test_build_results_table_formats_experiments():
@@ -89,3 +97,31 @@ def test_build_summary_text_reports_best_and_worst():
     assert "Completed 2 experiments" in summary
     assert "Best accuracy: 0.8500 (high)" in summary
     assert "Worst accuracy: 0.3300 (low)" in summary
+
+
+def test_build_summary_text_reports_llm_loss_when_present():
+    state = AgentState(goal="test llm")
+    state.experiment_results = [
+        ExperimentRecord(
+            iteration=1,
+            run_id="run-1",
+            job_id=10,
+            name="rank-8",
+            config={"task": {"type": "llm_peft_sft"}, "federated": {}},
+            metrics={"llm_results": {"rounds": [1], "train_loss": [0.9]}},
+            score=-0.9,
+        ),
+        ExperimentRecord(
+            iteration=2,
+            run_id="run-2",
+            job_id=11,
+            name="rank-16",
+            config={"task": {"type": "llm_peft_sft"}, "federated": {}},
+            metrics={"llm_results": {"rounds": [1], "train_loss": [0.7]}},
+            score=-0.7,
+        ),
+    ]
+
+    summary = build_summary_text(state=state)
+    assert "Best LLM train loss: loss=0.7000 (rank-16)" in summary
+    assert "Worst LLM train loss: loss=0.9000 (rank-8)" in summary

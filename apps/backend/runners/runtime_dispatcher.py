@@ -9,6 +9,7 @@ import yaml
 CLASSIC_FL_TASK = "classic_fl"
 LLM_PEFT_SFT_TASK = "llm_peft_sft"
 SUPPORTED_TASK_TYPES = {CLASSIC_FL_TASK, LLM_PEFT_SFT_TASK}
+LLM_SIMULATION_ONLY_MESSAGE = "LLM PEFT is currently supported in simulation mode only"
 
 
 def load_runtime_config(config_path: Path) -> dict[str, Any]:
@@ -32,8 +33,25 @@ def get_task_type(config: dict[str, Any]) -> str:
     return task_type.strip()
 
 
+def get_runtime_mode(config: dict[str, Any]) -> str:
+    """Return the runtime mode, defaulting missing legacy configs to simulation."""
+    system = config.get("system")
+    if not isinstance(system, dict):
+        return "simulation"
+    mode = system.get("mode", "simulation")
+    if not isinstance(mode, str) or not mode.strip():
+        return "simulation"
+    return mode.strip()
+
+
+def validate_runtime_route(config: dict[str, Any]) -> None:
+    if get_task_type(config) == LLM_PEFT_SFT_TASK and get_runtime_mode(config) != "simulation":
+        raise ValueError(LLM_SIMULATION_ONLY_MESSAGE)
+
+
 def run_runtime(config_path: Path) -> bool:
     config = load_runtime_config(config_path)
+    validate_runtime_route(config)
     task_type = get_task_type(config)
 
     if task_type == CLASSIC_FL_TASK:

@@ -19,7 +19,7 @@ import {
 } from "../config/compatibility";
 
 const META_KEYS = new Set(["role", "depends_on", "hidden", "ui"]);
-const AGENT_SECTIONS = new Set(["dataset", "model", "federated", "compression", "privacy"]);
+const AGENT_SECTIONS = new Set(["task", "dataset", "model", "llm", "sft", "peft", "federated", "compression", "privacy"]);
 
 export type AgentSchemaField = {
   path: string;
@@ -32,6 +32,7 @@ export type AgentSchemaField = {
   featured: boolean;
   group: string;
   options: unknown[];
+  dependsOn?: string;
 };
 
 function labelize(key: string): string {
@@ -117,6 +118,15 @@ export function checkDependency(properties: Record<string, unknown>, dependsOn?:
   });
 }
 
+function combineDependencies(parent?: string, child?: string): string | undefined {
+  const dependencies = [parent, child].filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+  return dependencies.length > 0 ? dependencies.join(" && ") : undefined;
+}
+
+export function agentFieldVisibleForConfig(field: AgentSchemaField, config: Record<string, unknown>): boolean {
+  return checkDependency(config, field.dependsOn ?? field.definition.depends_on);
+}
+
 export function collectAgentSchemaFields(
   schema: Record<string, unknown> | null,
   options: { featuredOnly?: boolean } = {},
@@ -124,13 +134,14 @@ export function collectAgentSchemaFields(
   if (!schema) return [];
   const fields: AgentSchemaField[] = [];
 
-  function walk(node: Record<string, unknown>, prefix: string, section: string): void {
+  function walk(node: Record<string, unknown>, prefix: string, section: string, inheritedDependsOn?: string): void {
     for (const [key, rawDefinition] of Object.entries(node)) {
       if (META_KEYS.has(key) || !isRecord(rawDefinition)) continue;
       const definition = rawDefinition as SchemaNode;
       const path = prefix ? `${prefix}.${key}` : key;
       const currentSection = prefix ? section : key;
       if (!AGENT_SECTIONS.has(currentSection)) continue;
+      const dependsOn = combineDependencies(inheritedDependsOn, definition.depends_on);
 
       if (isFieldDefinition(definition)) {
         const ui = fieldUi(definition);
@@ -148,11 +159,12 @@ export function collectAgentSchemaFields(
           featured,
           group: typeof ui.group === "string" ? ui.group : "Advanced",
           options: Array.isArray(definition.options) ? definition.options : [],
+          dependsOn,
         });
         continue;
       }
 
-      walk(definition, path, currentSection);
+      walk(definition, path, currentSection, dependsOn);
     }
   }
 
@@ -162,7 +174,10 @@ export function collectAgentSchemaFields(
 
 export function buildAgentConfig(schema: Record<string, unknown> | null, patch: Record<string, unknown>): Record<string, unknown> {
   const defaults = schema ? initDefaultsFromSchema(schema) : {};
-  return deepMerge(defaults, patch);
+  const config = deepMerge(defaults, patch);
+  setValueByPath(config, "system.mode", "simulation");
+  setValueByPath(config, "system.node_role", "server");
+  return config;
 }
 
 export function removeValueByPath(obj: Record<string, unknown>, path: string): Record<string, unknown> {
@@ -211,6 +226,7 @@ export function setConfigValue(config: Record<string, unknown>, path: string, va
 export function validateDisabledOptions(config: Record<string, unknown>, schema: Record<string, unknown> | null): string[] {
   const errors: string[] = [];
   for (const field of collectAgentSchemaFields(schema, { featuredOnly: false })) {
+    if (!agentFieldVisibleForConfig(field, config)) continue;
     if (field.type !== "select") continue;
     const value = getValueByPath(config, field.path);
     if (value !== undefined && optionDisabledForConfig(field.definition, value, field.path, config)) {
@@ -232,8 +248,10 @@ export function formatFieldValue(value: unknown): string {
 export function selectedConstraintChips(
   schema: Record<string, unknown> | null,
   constraints: Record<string, unknown>,
+  config?: Record<string, unknown>,
 ): Array<{ path: string; label: string; value: string }> {
   return collectAgentSchemaFields(schema, { featuredOnly: true })
+    .filter((field) => (config ? agentFieldVisibleForConfig(field, config) : true))
     .map((field) => {
       const value = getValueByPath(constraints, field.path);
       if (value === undefined) return null;

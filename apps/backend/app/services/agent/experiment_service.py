@@ -744,6 +744,7 @@ class AgentExperimentRunService:
             },
             "llm_dataset": {},
             "llm_runtime": {},
+            "llm_artifacts": [],
             "client_results": {},
         }
 
@@ -825,6 +826,12 @@ class AgentExperimentRunService:
         llm_runtime = payload.get("llm_runtime")
         if isinstance(llm_runtime, dict):
             normalized["llm_runtime"] = llm_runtime
+
+        llm_artifacts = payload.get("llm_artifacts")
+        if isinstance(llm_artifacts, list):
+            normalized["llm_artifacts"] = [
+                artifact for artifact in llm_artifacts if isinstance(artifact, dict)
+            ]
 
         client_results = payload.get("client_results")
         if isinstance(client_results, dict):

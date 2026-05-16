@@ -8,6 +8,7 @@ from app.core import exceptions
 
 CLASSIC_FL_TASK = "classic_fl"
 LLM_PEFT_SFT_TASK = "llm_peft_sft"
+LLM_SIMULATION_ONLY_MESSAGE = "LLM PEFT is currently supported in simulation mode only"
 
 
 def _project_root() -> Path:
@@ -38,6 +39,22 @@ def runtime_task_type(config: dict[str, Any]) -> str:
     return raw_task_type.strip()
 
 
+def runtime_mode(config: dict[str, Any]) -> str:
+    """Return the selected runtime mode, defaulting missing legacy configs to simulation."""
+    system = config.get("system")
+    if not isinstance(system, dict):
+        return "simulation"
+    raw_mode = system.get("mode", "simulation")
+    if not isinstance(raw_mode, str) or not raw_mode.strip():
+        return "simulation"
+    return raw_mode.strip()
+
+
+def validate_llm_simulation_mode_or_raise(config: dict[str, Any]) -> None:
+    if runtime_task_type(config) == LLM_PEFT_SFT_TASK and runtime_mode(config) != "simulation":
+        raise exceptions.BadRequestError(LLM_SIMULATION_ONLY_MESSAGE)
+
+
 def canonicalize_runtime_config(config: dict[str, Any]) -> None:
     if runtime_task_type(config) != CLASSIC_FL_TASK:
         return
@@ -65,6 +82,8 @@ def canonicalize_runtime_config(config: dict[str, Any]) -> None:
 
 
 def validate_runtime_config_or_raise(config: dict[str, Any]) -> None:
+    validate_llm_simulation_mode_or_raise(config)
+
     if runtime_task_type(config) != CLASSIC_FL_TASK:
         return
 

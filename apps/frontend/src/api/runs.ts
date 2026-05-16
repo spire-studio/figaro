@@ -31,6 +31,7 @@ export type RunMetrics = {
   };
   llm_dataset?: Record<string, unknown>;
   llm_runtime?: Record<string, unknown>;
+  llm_artifacts?: Record<string, unknown>[];
   client_results: Record<string, RunClientMetricSeries>;
 };
 

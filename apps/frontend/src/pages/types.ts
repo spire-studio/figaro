@@ -135,6 +135,7 @@ export type SimulationPageProps = {
   requestDeleteJob: (job: Job) => void;
   runLogs: RunLog[];
   runLogsRef: RefObject<HTMLDivElement | null>;
+  runMetrics: RunMetrics;
   runRounds: number[];
   runStatusVariant: Record<string, BadgeVariant>;
   runs: Run[];

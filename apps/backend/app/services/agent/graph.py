@@ -36,7 +36,7 @@ from .planning import (
 )
 from .prompts import build_plan_prompt, build_plan_system_instructions
 from .state import AgentState, ExperimentPlan, ExperimentRecord
-from .summary import build_results_table, build_summary_text, get_last_global_accuracy
+from .summary import build_results_table, build_summary_text, get_agent_run_score
 
 
 class FederatedAgentGraphBuilder:
@@ -307,7 +307,7 @@ class FederatedAgentGraphBuilder:
                 name=plan.name,
                 iteration_goal=plan.iteration_goal,
                 plan_summary=plan.plan_summary,
-                score=get_last_global_accuracy(metrics),
+                score=get_agent_run_score(metrics),
                 decision="recorded",
             )
             state.experiment_results.append(record)

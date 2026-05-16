@@ -7,6 +7,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Separator } from "../../../components/ui/separator";
 import { MiniLineChart } from "../../simulation/components/MiniLineChart";
 import { getValueByPath, isRecord } from "../../simulation/utils";
+import {
+  formatBytes,
+  isLlmRunMetrics,
+  llmAdapterSizeSeries,
+  llmPerplexitySeries,
+  llmRounds,
+  llmThroughputSeries,
+  llmTrainLossSeries,
+  llmValidationLossSeries,
+  selectedClientsText,
+  shortHash,
+} from "../../simulation/llm-metrics";
 import { fmt } from "../../../lib/time";
 import type { AgentPageProps } from "../../../pages/types";
 import { baseUrl } from "../../../api/client";
@@ -108,6 +120,23 @@ function formatDiffValue(value: unknown): string {
   return JSON.stringify(value);
 }
 
+function lastNumber(value: unknown): number | null {
+  if (!Array.isArray(value) || value.length === 0) return null;
+  const parsed = Number(value[value.length - 1]);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function latestLlmTrainLoss(metrics: any): number | null {
+  return lastNumber(metrics?.llm_results?.train_loss);
+}
+
+function experimentRankScore(experiment: any): number {
+  const llmLoss = latestLlmTrainLoss(experiment?.metrics);
+  if (llmLoss !== null) return -llmLoss;
+  const score = Number(experiment?.score);
+  return Number.isFinite(score) ? score : Number.NEGATIVE_INFINITY;
+}
+
 function diffBadgeClass(changeType: string): string {
   if (changeType === "added" || changeType === "initialize") return "border-emerald-500/70 text-emerald-600";
   if (changeType === "removed") return "border-red-500/70 text-red-600";
@@ -171,8 +200,8 @@ export function AgentResultsCompare(props: AgentPageProps) {
   const [configDiff, setConfigDiff] = useState<AgentConfigChange[]>([]);
 
   const experiments = selectedHistory?.experiments || [];
-  const bestExp = experiments.reduce((prev: any, curr: any) => 
-    (curr.score || 0) > (prev?.score || 0) ? curr : prev, experiments[0] || null);
+  const bestExp = experiments.reduce((prev: any, curr: any) =>
+    experimentRankScore(curr) > experimentRankScore(prev) ? curr : prev, experiments[0] || null);
   const bestConfig = asConfigRecord(selectedHistory?.best_config) ?? asConfigRecord(bestExp?.config);
   const bestConfigSummary = useMemo(
     () => buildConfigSummary(bestConfig, configSchema),
@@ -303,10 +332,15 @@ export function AgentResultsCompare(props: AgentPageProps) {
     void refreshHistoryJobs(next).catch((error: unknown) => notifyError(error, "agent-history-filter-reset"));
   }
 
+  const isLlmRun = isLlmRunMetrics(metrics);
   const globalResults = metrics?.global_results || {};
   const clientResults = metrics?.client_results || {};
-  const actualDataLength = globalResults.global_accuracy?.length || 0;
-  const rounds = globalResults.rounds ? globalResults.rounds.slice(0, actualDataLength) : Array.from({ length: actualDataLength }, (_, i) => i + 1);
+  const actualDataLength = isLlmRun
+    ? (metrics?.llm_results?.rounds?.length || metrics?.llm_results?.train_loss?.length || 0)
+    : (globalResults.global_accuracy?.length || 0);
+  const rounds = isLlmRun
+    ? llmRounds(metrics)
+    : globalResults.rounds ? globalResults.rounds.slice(0, actualDataLength) : Array.from({ length: actualDataLength }, (_, i) => i + 1);
   const safeSlice = (arr: any[]) => (arr || []).slice(0, actualDataLength);
 
   const globalAccSeries = [{ key: "g_acc", label: "Global Accuracy", color: CHART_COLORS[0], values: safeSlice(globalResults.global_accuracy) }];
@@ -435,10 +469,16 @@ export function AgentResultsCompare(props: AgentPageProps) {
                     <p className="font-bold text-emerald-800 dark:text-emerald-300">Optimal Configuration</p>
                   </div>
                   <div className="text-3xl font-black text-emerald-700 dark:text-emerald-400 mb-2">
-                    {bestExp?.score != null ? `${(bestExp.score * 100).toFixed(2)}%` : "N/A"}
+                    {isLlmRunMetrics(bestExp?.metrics)
+                      ? latestLlmTrainLoss(bestExp?.metrics) !== null
+                        ? latestLlmTrainLoss(bestExp?.metrics)?.toFixed(4)
+                        : "N/A"
+                      : bestExp?.score != null
+                        ? `${(bestExp.score * 100).toFixed(2)}%`
+                        : "N/A"}
                   </div>
                   <p className="text-xs text-emerald-700/70 dark:text-emerald-400/70">
-                    Experiment <strong>"{bestExp?.name}"</strong> yielded the highest accuracy.
+                    Experiment <strong>"{bestExp?.name}"</strong> yielded the {isLlmRunMetrics(bestExp?.metrics) ? "lowest visible LLM loss" : "highest accuracy"}.
                   </p>
                   {bestConfig ? (
                     <>
@@ -628,14 +668,66 @@ export function AgentResultsCompare(props: AgentPageProps) {
             </div>
 
             {selectedRunId ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
-                <Card className="shadow-sm"><CardContent className="p-4"><MiniLineChart title="Global Accuracy" xValues={rounds} series={globalAccSeries} formatter={(v: number) => `${(v * 100).toFixed(2)}%`} /></CardContent></Card>
-                <Card className="shadow-sm"><CardContent className="p-4"><MiniLineChart title="Global Loss" xValues={rounds} series={globalLossSeries} formatter={(v: number) => v.toFixed(4)} /></CardContent></Card>
-                <Card className="shadow-sm"><CardContent className="p-4"><MiniLineChart title="Client Train Accuracy" xValues={rounds} series={clientTrainAccSeries} formatter={(v: number) => `${(v * 100).toFixed(2)}%`} /></CardContent></Card>
-                <Card className="shadow-sm"><CardContent className="p-4"><MiniLineChart title="Client Test Accuracy" xValues={rounds} series={clientTestAccSeries} formatter={(v: number) => `${(v * 100).toFixed(2)}%`} /></CardContent></Card>
-                <Card className="shadow-sm"><CardContent className="p-4"><MiniLineChart title="Client Train Loss" xValues={rounds} series={clientTrainLossSeries} formatter={(v: number) => v.toFixed(4)} /></CardContent></Card>
-                <Card className="shadow-sm"><CardContent className="p-4"><MiniLineChart title="Client Test Loss" xValues={rounds} series={clientTestLossSeries} formatter={(v: number) => v.toFixed(4)} /></CardContent></Card>
-              </div>
+              <>
+                {!isLlmRun && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+                    <Card className="shadow-sm"><CardContent className="p-4"><MiniLineChart title="Global Accuracy" xValues={rounds} series={globalAccSeries} formatter={(v: number) => `${(v * 100).toFixed(2)}%`} /></CardContent></Card>
+                    <Card className="shadow-sm"><CardContent className="p-4"><MiniLineChart title="Global Loss" xValues={rounds} series={globalLossSeries} formatter={(v: number) => v.toFixed(4)} /></CardContent></Card>
+                    <Card className="shadow-sm"><CardContent className="p-4"><MiniLineChart title="Client Train Accuracy" xValues={rounds} series={clientTrainAccSeries} formatter={(v: number) => `${(v * 100).toFixed(2)}%`} /></CardContent></Card>
+                    <Card className="shadow-sm"><CardContent className="p-4"><MiniLineChart title="Client Test Accuracy" xValues={rounds} series={clientTestAccSeries} formatter={(v: number) => `${(v * 100).toFixed(2)}%`} /></CardContent></Card>
+                    <Card className="shadow-sm"><CardContent className="p-4"><MiniLineChart title="Client Train Loss" xValues={rounds} series={clientTrainLossSeries} formatter={(v: number) => v.toFixed(4)} /></CardContent></Card>
+                    <Card className="shadow-sm"><CardContent className="p-4"><MiniLineChart title="Client Test Loss" xValues={rounds} series={clientTestLossSeries} formatter={(v: number) => v.toFixed(4)} /></CardContent></Card>
+                  </div>
+                )}
+                {isLlmRun && (
+                  <div className="space-y-4 mt-2">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <Card className="shadow-sm"><CardContent className="p-4"><MiniLineChart title="LLM Train Loss" xValues={rounds} series={llmTrainLossSeries(metrics)} formatter={(v: number) => v.toFixed(4)} /></CardContent></Card>
+                      <Card className="shadow-sm"><CardContent className="p-4"><MiniLineChart title="LLM Validation Loss" xValues={rounds} series={llmValidationLossSeries(metrics)} formatter={(v: number) => v.toFixed(4)} /></CardContent></Card>
+                      <Card className="shadow-sm"><CardContent className="p-4"><MiniLineChart title="Perplexity" xValues={rounds} series={llmPerplexitySeries(metrics)} formatter={(v: number) => v.toFixed(2)} /></CardContent></Card>
+                      <Card className="shadow-sm"><CardContent className="p-4"><MiniLineChart title="Token Throughput" xValues={rounds} series={llmThroughputSeries(metrics)} formatter={(v: number) => `${v.toFixed(1)} tok/s`} /></CardContent></Card>
+                      <Card className="shadow-sm"><CardContent className="p-4"><MiniLineChart title="Adapter Size" xValues={rounds} series={llmAdapterSizeSeries(metrics)} formatter={(v: number) => formatBytes(v)} /></CardContent></Card>
+                      <Card className="shadow-sm"><CardContent className="p-4"><MiniLineChart title="Client Train Loss" xValues={rounds} series={clientTrainLossSeries} formatter={(v: number) => v.toFixed(4)} /></CardContent></Card>
+                    </div>
+                    <Card className="shadow-sm">
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm">Adapter Lineage</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="overflow-auto rounded-md border">
+                          <table className="w-full min-w-[680px] text-left text-xs">
+                            <thead className="border-b bg-muted/40 text-muted-foreground">
+                              <tr>
+                                <th className="px-3 py-2 font-medium">Round</th>
+                                <th className="px-3 py-2 font-medium">Clients</th>
+                                <th className="px-3 py-2 font-medium">Size</th>
+                                <th className="px-3 py-2 font-medium">SHA-256</th>
+                                <th className="px-3 py-2 font-medium">Parent</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {(metrics?.llm_artifacts ?? []).map((artifact: Record<string, unknown>, index: number) => (
+                                <tr key={`${artifact.path ?? index}`} className="border-b last:border-none">
+                                  <td className="px-3 py-2 font-mono">{formatFieldValue(artifact.round)}</td>
+                                  <td className="px-3 py-2 font-mono">{selectedClientsText(artifact.selected_clients)}</td>
+                                  <td className="px-3 py-2 font-mono">{formatBytes(artifact.size_bytes)}</td>
+                                  <td className="px-3 py-2 font-mono" title={String(artifact.sha256 ?? "")}>{shortHash(artifact.sha256)}</td>
+                                  <td className="px-3 py-2 font-mono" title={String(artifact.parent_sha256 ?? "")}>{shortHash(artifact.parent_sha256)}</td>
+                                </tr>
+                              ))}
+                              {(metrics?.llm_artifacts ?? []).length === 0 && (
+                                <tr>
+                                  <td colSpan={5} className="px-3 py-6 text-center text-muted-foreground">No adapter artifacts recorded yet.</td>
+                                </tr>
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+                )}
+              </>
             ) : (
                <div className="text-center py-10 text-sm text-muted-foreground border border-dashed rounded-lg">
                  Select an experiment above to load its charts.
