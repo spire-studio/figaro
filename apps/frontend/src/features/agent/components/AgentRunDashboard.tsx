@@ -35,8 +35,8 @@ function lastNumber(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function latestLlmTrainLoss(metrics: any): number | null {
-  return lastNumber(metrics?.llm_results?.train_loss);
+function latestLlmLoss(metrics: any): number | null {
+  return lastNumber(metrics?.llm_results?.validation_loss) ?? lastNumber(metrics?.llm_results?.train_loss);
 }
 
 export function AgentRunDashboard({ progress }: AgentPageProps) {
@@ -159,9 +159,9 @@ export function AgentRunDashboard({ progress }: AgentPageProps) {
                   <span className={`font-semibold truncate ${isSelected ? 'text-primary' : 'text-foreground'}`}>
                     {`Exp ${idx + 1}`}
                   </span>
-                  {isLlmRunMetrics(exp.metrics) && latestLlmTrainLoss(exp.metrics) !== null && (
+                  {isLlmRunMetrics(exp.metrics) && latestLlmLoss(exp.metrics) !== null && (
                     <span className="text-[10px] text-muted-foreground mt-0.5">
-                      Loss: {latestLlmTrainLoss(exp.metrics)?.toFixed(4)}
+                      Loss: {latestLlmLoss(exp.metrics)?.toFixed(4)}
                     </span>
                   )}
                   {!isLlmRunMetrics(exp.metrics) && exp.score != null && (

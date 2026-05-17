@@ -48,12 +48,21 @@ class LlmFederatedConfig:
 
 
 @dataclass(frozen=True)
+class LlmEvaluationConfig:
+    enabled: bool
+    dataset_path: Path | None
+    batch_size: int
+    max_samples: int
+
+
+@dataclass(frozen=True)
 class LlmPeftRuntimeConfig:
     task_type: str
     llm: LlmModelConfig
     sft: SftDatasetConfig
     peft: PeftAdapterConfig
     federated: LlmFederatedConfig
+    evaluation: LlmEvaluationConfig
     results_dir: Path
 
 
@@ -83,6 +92,7 @@ def normalize_llm_peft_config(config: Mapping[str, Any]) -> LlmPeftRuntimeConfig
     sft_cfg = _mapping(config.get("sft"))
     peft_cfg = _mapping(config.get("peft"))
     federated_cfg = _mapping(config.get("federated"))
+    evaluation_cfg = _mapping(config.get("evaluation"))
     logging_cfg = _mapping(config.get("logging"))
 
     llm = LlmModelConfig(
@@ -130,12 +140,22 @@ def normalize_llm_peft_config(config: Mapping[str, Any]) -> LlmPeftRuntimeConfig
     if federated.clients_per_round > federated.num_clients:
         raise ValueError("federated.clients_per_round cannot exceed federated.num_clients")
 
+    evaluation = LlmEvaluationConfig(
+        enabled=_bool(evaluation_cfg.get("enable", False), "evaluation.enable"),
+        dataset_path=_optional_path(evaluation_cfg.get("dataset_path")),
+        batch_size=_positive_int(evaluation_cfg.get("batch_size", 1), "evaluation.batch_size"),
+        max_samples=_positive_int(evaluation_cfg.get("max_samples", 128), "evaluation.max_samples"),
+    )
+    if evaluation.enabled and evaluation.dataset_path is None:
+        raise ValueError("evaluation.dataset_path must be set when evaluation.enable is true")
+
     return LlmPeftRuntimeConfig(
         task_type=task_type,
         llm=llm,
         sft=sft,
         peft=peft,
         federated=federated,
+        evaluation=evaluation,
         results_dir=Path(str(logging_cfg.get("results_dir", "./results"))),
     )
 
@@ -157,6 +177,18 @@ def _text(value: Any, path: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{path} must be a non-empty string")
     return value.strip()
+
+
+def _bool(value: Any, path: str) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"true", "1", "yes", "on"}:
+            return True
+        if lowered in {"false", "0", "no", "off", ""}:
+            return False
+    raise ValueError(f"{path} must be a boolean")
 
 
 def _int(value: Any, path: str) -> int:

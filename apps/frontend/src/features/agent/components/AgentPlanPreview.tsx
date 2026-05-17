@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { ClipboardList, MessageSquare, Play, Sparkles, Target } from "lucide-react";
 import { toast } from "sonner";
 
@@ -354,9 +354,11 @@ function SchemaFieldControl({
   value: unknown;
   onChange: (value: unknown) => void;
 }) {
+  const datalistId = useId();
   const compatibilityHint = fieldCompatibilityHint(field.path, config);
   const boolDisabled = disabled || booleanDisabledForConfig(field.path, value, config);
   const boolReason = booleanDisableReasonForConfig(field.path, value, config);
+  const textOptions = field.options.map((option) => String(option));
 
   return (
     <div className="space-y-1 rounded-md border border-border/70 bg-background/60 p-2">
@@ -409,12 +411,22 @@ function SchemaFieldControl({
         </div>
       )}
       {field.type !== "select" && field.type !== "number" && field.type !== "bool" && (
-        <Input
-          className="font-mono"
-          disabled={disabled}
-          value={formatFieldValue(value)}
-          onChange={(event) => onChange(event.target.value)}
-        />
+        <>
+          <Input
+            className="font-mono"
+            disabled={disabled}
+            list={textOptions.length > 0 ? datalistId : undefined}
+            value={formatFieldValue(value)}
+            onChange={(event) => onChange(event.target.value)}
+          />
+          {textOptions.length > 0 && (
+            <datalist id={datalistId}>
+              {textOptions.map((option) => (
+                <option key={`${field.path}-${option}`} value={option} />
+              ))}
+            </datalist>
+          )}
+        </>
       )}
       {compatibilityHint && <p className="text-[11px] text-muted-foreground">{compatibilityHint}</p>}
       {boolReason && <p className="text-[11px] text-muted-foreground">{boolReason}</p>}

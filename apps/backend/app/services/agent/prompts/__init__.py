@@ -52,6 +52,7 @@ def build_plan_prompt(
         "Every experiment must inherit the structured constraints. If text conflicts with them, keep the structured constraints.\n"
         "Use executable_options for select fields. Do not use disabled_options.\n"
         "For LLM PEFT simulation requests, set task.type=\"llm_peft_sft\" and use llm/sft/peft/federated fields.\n"
+        "For LLM validation or perplexity requests, set evaluation.enable=true and include evaluation.dataset_path when available.\n"
         "Respect dataset_model_compatibility. Use model.name=\"Auto\" when the user changes dataset without naming a model.\n"
         "Respect privacy/compression compatibility rules from Runtime capabilities.\n"
         "Return ONLY a JSON object with plan_summary and experiments list, no commentary."

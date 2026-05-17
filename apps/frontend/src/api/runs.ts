@@ -30,6 +30,7 @@ export type RunMetrics = {
     adapter_size_bytes: number[];
   };
   llm_dataset?: Record<string, unknown>;
+  llm_evaluation?: Record<string, unknown>;
   llm_runtime?: Record<string, unknown>;
   llm_artifacts?: Record<string, unknown>[];
   client_results: Record<string, RunClientMetricSeries>;

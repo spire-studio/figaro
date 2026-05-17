@@ -5,6 +5,7 @@ from app.services.agent.summary import (
     get_agent_run_score,
     get_last_global_accuracy,
     get_last_llm_train_loss,
+    get_last_llm_validation_loss,
 )
 
 
@@ -22,6 +23,12 @@ def test_agent_run_score_uses_negative_llm_train_loss():
     metrics = {"llm_results": {"train_loss": [1.2, 0.8]}}
     assert get_last_llm_train_loss(metrics) == 0.8
     assert get_agent_run_score(metrics) == -0.8
+
+
+def test_agent_run_score_prefers_llm_validation_loss():
+    metrics = {"llm_results": {"train_loss": [0.8], "validation_loss": [0.6]}}
+    assert get_last_llm_validation_loss(metrics) == 0.6
+    assert get_agent_run_score(metrics) == -0.6
 
 
 def test_build_results_table_formats_experiments():
@@ -123,5 +130,5 @@ def test_build_summary_text_reports_llm_loss_when_present():
     ]
 
     summary = build_summary_text(state=state)
-    assert "Best LLM train loss: loss=0.7000 (rank-16)" in summary
-    assert "Worst LLM train loss: loss=0.9000 (rank-8)" in summary
+    assert "Best LLM loss: train_loss=0.7000 (rank-16)" in summary
+    assert "Worst LLM loss: train_loss=0.9000 (rank-8)" in summary

@@ -84,11 +84,32 @@ def test_normalize_llm_peft_config_parses_nested_sections(tmp_path):
     assert normalized.peft.target_modules == ("q_proj", "v_proj")
     assert normalized.peft.resume_adapter_path == resume_path
     assert normalized.federated.num_clients == 2
+    assert normalized.evaluation.enabled is False
+    assert normalized.evaluation.batch_size == 1
 
 
 def test_parse_target_modules_rejects_empty_values():
     with pytest.raises(ValueError, match="target_modules"):
         parse_target_modules(" , ")
+
+
+def test_normalize_llm_peft_config_parses_evaluation_section(tmp_path):
+    evaluation_path = tmp_path / "validation.jsonl"
+    evaluation_path.write_text(json.dumps({"prompt": "Q", "completion": "A"}), encoding="utf-8")
+    config = _base_config(tmp_path)
+    config["evaluation"] = {
+        "enable": True,
+        "dataset_path": str(evaluation_path),
+        "batch_size": 2,
+        "max_samples": 8,
+    }
+
+    normalized = normalize_llm_peft_config(config)
+
+    assert normalized.evaluation.enabled is True
+    assert normalized.evaluation.dataset_path == evaluation_path
+    assert normalized.evaluation.batch_size == 2
+    assert normalized.evaluation.max_samples == 8
 
 
 def test_load_jsonl_sft_records_prompt_completion_and_split(tmp_path):
@@ -175,6 +196,7 @@ def test_empty_llm_metrics_payload_and_round_append(tmp_path):
     assert payload["experiment_info"]["basic"]["task_type"] == "llm_peft_sft"
     assert payload["llm_results"]["rounds"] == [1]
     assert payload["llm_artifacts"] == []
+    assert payload["llm_evaluation"] == {}
     assert payload["llm_results"]["perplexity"][0] == pytest.approx(2.71828, rel=1e-4)
     assert payload["global_results"]["global_loss"] == [1.0]
 

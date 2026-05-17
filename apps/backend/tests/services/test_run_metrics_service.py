@@ -17,6 +17,7 @@ def test_normalize_metrics_payload_preserves_llm_sections():
                 "adapter_size_bytes": [1024],
             },
             "llm_dataset": {"num_records": 12},
+            "llm_evaluation": {"enabled": True, "num_records": 4},
             "llm_runtime": {"status": "blocked"},
             "llm_artifacts": [{"round": 1, "path": "adapter.pt"}, "not-an-object"],
         }
@@ -25,5 +26,6 @@ def test_normalize_metrics_payload_preserves_llm_sections():
     assert normalized["llm_results"]["rounds"] == [1, 2]
     assert normalized["llm_results"]["token_throughput"] == [42.0]
     assert normalized["llm_dataset"]["num_records"] == 12
+    assert normalized["llm_evaluation"]["num_records"] == 4
     assert normalized["llm_runtime"]["status"] == "blocked"
     assert normalized["llm_artifacts"] == [{"round": 1, "path": "adapter.pt"}]

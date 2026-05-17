@@ -126,12 +126,12 @@ function lastNumber(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function latestLlmTrainLoss(metrics: any): number | null {
-  return lastNumber(metrics?.llm_results?.train_loss);
+function latestLlmLoss(metrics: any): number | null {
+  return lastNumber(metrics?.llm_results?.validation_loss) ?? lastNumber(metrics?.llm_results?.train_loss);
 }
 
 function experimentRankScore(experiment: any): number {
-  const llmLoss = latestLlmTrainLoss(experiment?.metrics);
+  const llmLoss = latestLlmLoss(experiment?.metrics);
   if (llmLoss !== null) return -llmLoss;
   const score = Number(experiment?.score);
   return Number.isFinite(score) ? score : Number.NEGATIVE_INFINITY;
@@ -470,8 +470,8 @@ export function AgentResultsCompare(props: AgentPageProps) {
                   </div>
                   <div className="text-3xl font-black text-emerald-700 dark:text-emerald-400 mb-2">
                     {isLlmRunMetrics(bestExp?.metrics)
-                      ? latestLlmTrainLoss(bestExp?.metrics) !== null
-                        ? latestLlmTrainLoss(bestExp?.metrics)?.toFixed(4)
+                      ? latestLlmLoss(bestExp?.metrics) !== null
+                        ? latestLlmLoss(bestExp?.metrics)?.toFixed(4)
                         : "N/A"
                       : bestExp?.score != null
                         ? `${(bestExp.score * 100).toFixed(2)}%`

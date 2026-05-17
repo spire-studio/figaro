@@ -1,5 +1,5 @@
 import { ArrowRight, Loader2, SlidersHorizontal, Sparkles, X } from "lucide-react";
-import { useMemo } from "react";
+import { useId, useMemo } from "react";
 
 import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
@@ -192,12 +192,14 @@ function ConstraintField({
   value: unknown;
   onChange: (value: unknown) => void;
 }) {
+  const datalistId = useId();
   const hint = field.definition.ui && typeof field.definition.ui.prompt_hint === "string"
     ? field.definition.ui.prompt_hint
     : null;
   const compatibilityHint = fieldCompatibilityHint(field.path, config);
   const boolDisabled = booleanDisabledForConfig(field.path, value, config);
   const boolReason = booleanDisableReasonForConfig(field.path, value, config);
+  const textOptions = field.options.map((option) => String(option));
 
   return (
     <div className="space-y-1 rounded-md border border-border/70 bg-background/60 p-3">
@@ -252,7 +254,21 @@ function ConstraintField({
         </div>
       )}
       {field.type !== "select" && field.type !== "number" && field.type !== "bool" && (
-        <Input className="font-mono" value={formatFieldValue(value)} onChange={(event) => onChange(event.target.value)} />
+        <>
+          <Input
+            className="font-mono"
+            list={textOptions.length > 0 ? datalistId : undefined}
+            value={formatFieldValue(value)}
+            onChange={(event) => onChange(event.target.value)}
+          />
+          {textOptions.length > 0 && (
+            <datalist id={datalistId}>
+              {textOptions.map((option) => (
+                <option key={`${field.path}-${option}`} value={option} />
+              ))}
+            </datalist>
+          )}
+        </>
       )}
       {compatibilityHint && <p className="text-[11px] text-muted-foreground">{compatibilityHint}</p>}
       {boolReason && <p className="text-[11px] text-muted-foreground">{boolReason}</p>}

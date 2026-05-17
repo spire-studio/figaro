@@ -32,6 +32,7 @@ from app.models.agent import (
     AgentExperimentStatus,
 )
 from app.repositories.agent import AgentExperimentRepository
+from app.services.llm_resources import augment_config_schema_with_llm_resources
 from app.services.simulation.compatibility import canonicalize_runtime_config, validate_runtime_config_or_raise
 
 from app.core.logger import get_logger
@@ -206,7 +207,7 @@ class AgentExperimentService:
         loaded = yaml.safe_load(schema_path.read_text(encoding="utf-8"))
         if not isinstance(loaded, dict):
             raise exceptions.InternalServiceError("Config schema must be a YAML object.")
-        return loaded
+        return augment_config_schema_with_llm_resources(loaded, cls._project_root())
 
     @classmethod
     def normalize_simulation_config(cls, config: dict[str, Any]) -> dict[str, Any]:
@@ -743,6 +744,7 @@ class AgentExperimentRunService:
                 "adapter_size_bytes": [],
             },
             "llm_dataset": {},
+            "llm_evaluation": {},
             "llm_runtime": {},
             "llm_artifacts": [],
             "client_results": {},
@@ -822,6 +824,10 @@ class AgentExperimentRunService:
         llm_dataset = payload.get("llm_dataset")
         if isinstance(llm_dataset, dict):
             normalized["llm_dataset"] = llm_dataset
+
+        llm_evaluation = payload.get("llm_evaluation")
+        if isinstance(llm_evaluation, dict):
+            normalized["llm_evaluation"] = llm_evaluation
 
         llm_runtime = payload.get("llm_runtime")
         if isinstance(llm_runtime, dict):

@@ -56,8 +56,9 @@ def run_llm_peft_runtime(config_path: Path) -> bool:
         print(f"SFT_DATASET: {runtime_config.sft.dataset_path}")
         print(f"PEFT_ADAPTER: method={runtime_config.peft.method} rank={runtime_config.peft.rank}")
 
+        dataset_path = _resolve_runtime_path(runtime_config.sft.dataset_path)
         records = load_jsonl_sft_records(
-            runtime_config.sft.dataset_path,
+            dataset_path,
             data_format=runtime_config.sft.format,
         )
         client_splits = split_records_by_client(
@@ -70,7 +71,26 @@ def run_llm_peft_runtime(config_path: Path) -> bool:
             "client_record_counts": [len(client_records) for client_records in client_splits],
             "format": runtime_config.sft.format,
             "prompt_template": runtime_config.sft.prompt_template,
+            "path": str(dataset_path),
         }
+        evaluation_records = None
+        if runtime_config.evaluation.enabled:
+            if runtime_config.evaluation.dataset_path is None:
+                raise ValueError("evaluation.dataset_path must be set when evaluation.enable is true")
+            evaluation_path = _resolve_runtime_path(runtime_config.evaluation.dataset_path)
+            evaluation_records = load_jsonl_sft_records(
+                evaluation_path,
+                data_format=runtime_config.sft.format,
+            )[: runtime_config.evaluation.max_samples]
+            metrics["llm_evaluation"] = {
+                "enabled": True,
+                "path": str(evaluation_path),
+                "num_records": len(evaluation_records),
+                "batch_size": runtime_config.evaluation.batch_size,
+                "max_samples": runtime_config.evaluation.max_samples,
+            }
+        else:
+            metrics["llm_evaluation"] = {"enabled": False}
         _write_metrics(runtime_config, metrics)
 
         missing = missing_llm_runtime_dependencies()
@@ -161,10 +181,26 @@ def run_llm_peft_runtime(config_path: Path) -> bool:
             elapsed = max(time.perf_counter() - started_at, 1e-9)
             total_tokens = sum(update.num_tokens for update in updates)
             train_loss = _weighted_train_loss(updates)
+            validation_loss = None
+            if evaluation_records is not None:
+                evaluation_metrics = trainer.evaluate_adapter(
+                    records=evaluation_records,
+                    adapter_state=global_adapter_state,
+                    output_dir=work_dir / f"round_{round_num}" / "evaluation",
+                )
+                validation_loss = float(evaluation_metrics.get("validation_loss", 0.0))
+                metrics["llm_evaluation"] = {
+                    **metrics.get("llm_evaluation", {}),
+                    "last_round": round_num,
+                    "last_validation_loss": validation_loss,
+                    "last_num_examples": int(evaluation_metrics.get("num_examples", len(evaluation_records))),
+                    "last_num_tokens": int(evaluation_metrics.get("num_tokens", 0)),
+                }
             append_llm_round_metrics(
                 metrics,
                 round_num=round_num,
                 train_loss=train_loss,
+                validation_loss=validation_loss,
                 token_throughput=total_tokens / elapsed,
                 adapter_size_bytes=adapter_size,
             )

@@ -155,6 +155,102 @@ def test_llm_peft_runtime_runs_client_training_and_aggregates_adapters(tmp_path,
     assert metrics["llm_runtime"]["latest_adapter_sha256"] == sha256_file(adapter_path)
 
 
+def test_llm_peft_runtime_evaluates_global_adapter_when_enabled(tmp_path, monkeypatch):
+    dataset_path = tmp_path / "train.jsonl"
+    dataset_path.write_text(
+        "\n".join(
+            [
+                json.dumps({"prompt": "p0", "completion": "c0"}),
+                json.dumps({"prompt": "p1", "completion": "c1"}),
+            ]
+        ),
+        encoding="utf-8",
+    )
+    evaluation_path = tmp_path / "validation.jsonl"
+    evaluation_path.write_text(
+        "\n".join(
+            [
+                json.dumps({"prompt": "v0", "completion": "a0"}),
+                json.dumps({"prompt": "v1", "completion": "a1"}),
+            ]
+        ),
+        encoding="utf-8",
+    )
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "task": {"type": "llm_peft_sft"},
+                "llm": {"base_model": "tiny-model", "tokenizer": "auto", "max_seq_length": 128, "precision": "fp32"},
+                "sft": {
+                    "dataset_path": str(dataset_path),
+                    "format": "prompt_completion",
+                    "prompt_template": "plain",
+                },
+                "peft": {
+                    "method": "lora",
+                    "rank": 4,
+                    "alpha": 8,
+                    "dropout": 0.0,
+                    "target_modules": "q_proj",
+                    "quantization": "none",
+                },
+                "evaluation": {
+                    "enable": True,
+                    "dataset_path": str(evaluation_path),
+                    "batch_size": 1,
+                    "max_samples": 1,
+                },
+                "federated": {
+                    "num_clients": 2,
+                    "num_rounds": 1,
+                    "clients_per_round": 2,
+                    "local_epochs": 1,
+                    "learning_rate": 0.0002,
+                    "aggregation": "fedavg",
+                    "seed": 1,
+                },
+                "logging": {"results_dir": "results"},
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    class FakeTrainer:
+        def __init__(self, config):
+            self.config = config
+
+        def train_client(self, *, client_id, records, round_num, initial_adapter_state=None, output_dir=None):
+            return AdapterClientUpdate(
+                adapter_state={"lora_A": torch.tensor([float(client_id + 1)])},
+                num_examples=len(records),
+                num_tokens=10,
+                metrics={"train_loss": float(client_id + 1)},
+            )
+
+        def evaluate_adapter(self, *, records, adapter_state, output_dir=None):
+            assert len(records) == 1
+            assert adapter_state is not None
+            assert torch.allclose(adapter_state["lora_A"], torch.tensor([1.5]))
+            assert output_dir is not None
+            return {"validation_loss": 0.25, "num_examples": len(records), "num_tokens": 4}
+
+    monkeypatch.setattr(llm_peft_runtime, "PROJECT_ROOT", tmp_path)
+    monkeypatch.setenv("FIGARO_RESULTS_FILE", "live_results_eval.json")
+    monkeypatch.setattr(llm_peft_runtime, "missing_llm_runtime_dependencies", lambda: [])
+    monkeypatch.setattr(llm_peft_runtime, "LlmPeftTrainer", FakeTrainer)
+
+    assert llm_peft_runtime.run_llm_peft_runtime(config_path) is True
+
+    metrics = json.loads((tmp_path / "results" / "live_results_eval.json").read_text(encoding="utf-8"))
+    assert metrics["llm_evaluation"]["enabled"] is True
+    assert metrics["llm_evaluation"]["num_records"] == 1
+    assert metrics["llm_evaluation"]["last_validation_loss"] == 0.25
+    assert metrics["llm_results"]["validation_loss"] == [0.25]
+    assert metrics["global_results"]["global_loss"] == [0.25]
+
+
 def test_llm_peft_runtime_resumes_from_adapter_artifact(tmp_path, monkeypatch):
     dataset_path = tmp_path / "train.jsonl"
     dataset_path.write_text(json.dumps({"prompt": "p0", "completion": "c0"}), encoding="utf-8")

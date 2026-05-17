@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core import exceptions
 from app.models.simulation import SimulationJob, SimulationJobStatus, SimulationRunStatus
 from app.repositories.simulation import SimulationJobRepository, SimulationRunRepository
+from app.services.llm_resources import augment_config_schema_with_llm_resources
 from app.services.simulation.compatibility import canonicalize_runtime_config, validate_runtime_config_or_raise
 
 
@@ -193,7 +194,7 @@ class SimulationJobService:
         loaded = yaml.safe_load(schema_path.read_text(encoding="utf-8"))
         if not isinstance(loaded, dict):
             raise exceptions.InternalServiceError("Config schema must be a YAML object.")
-        return loaded
+        return augment_config_schema_with_llm_resources(loaded, cls._project_root())
 
     @classmethod
     def normalize_simulation_config(cls, config: dict[str, Any]) -> dict[str, Any]:

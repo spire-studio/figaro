@@ -19,7 +19,18 @@ import {
 } from "../config/compatibility";
 
 const META_KEYS = new Set(["role", "depends_on", "hidden", "ui"]);
-const AGENT_SECTIONS = new Set(["task", "dataset", "model", "llm", "sft", "peft", "federated", "compression", "privacy"]);
+const AGENT_SECTIONS = new Set([
+  "task",
+  "dataset",
+  "model",
+  "llm",
+  "sft",
+  "peft",
+  "evaluation",
+  "federated",
+  "compression",
+  "privacy",
+]);
 
 export type AgentSchemaField = {
   path: string;

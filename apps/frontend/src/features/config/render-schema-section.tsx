@@ -52,6 +52,15 @@ function parseOptionalNumber(value: unknown): number | undefined {
   return undefined;
 }
 
+function textOptions(definition: SchemaNode): string[] {
+  if (!Array.isArray(definition.options)) return [];
+  return definition.options.map((option) => String(option));
+}
+
+function datalistIdForPath(path: string): string {
+  return `schema-options-${path.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+}
+
 export function renderSchemaSection(
   schemaSection: Record<string, unknown>,
   pathPrefix: string,
@@ -199,7 +208,18 @@ export function renderSchemaSection(
       blocks.push(
         <div key={fullPath} className="space-y-1 rounded-md border border-border/70 bg-muted/25 p-2">
           <p className="text-xs text-muted-foreground">{labelize(key)}</p>
-          <Input value={String(value ?? "")} onChange={(event) => onChangeProperty(fullPath, event.target.value)} />
+          <Input
+            list={textOptions(definition).length > 0 ? datalistIdForPath(fullPath) : undefined}
+            value={String(value ?? "")}
+            onChange={(event) => onChangeProperty(fullPath, event.target.value)}
+          />
+          {textOptions(definition).length > 0 && (
+            <datalist id={datalistIdForPath(fullPath)}>
+              {textOptions(definition).map((option) => (
+                <option key={`${fullPath}-${option}`} value={option} />
+              ))}
+            </datalist>
+          )}
         </div>,
       );
       continue;

@@ -22,10 +22,12 @@ export function isLlmRunMetrics(metrics: RunMetrics | null | undefined): boolean
   if (!metrics) return false;
   const basic = recordOf(metrics.experiment_info?.basic);
   const llmResults = recordOf(metrics.llm_results);
+  const llmEvaluation = recordOf(metrics.llm_evaluation);
   const llmRuntime = recordOf(metrics.llm_runtime);
   return (
     basic.task_type === "llm_peft_sft" ||
     numericList(llmResults.rounds).length > 0 ||
+    Object.keys(llmEvaluation).length > 0 ||
     Object.keys(llmRuntime).length > 0 ||
     (metrics.llm_artifacts?.length ?? 0) > 0
   );

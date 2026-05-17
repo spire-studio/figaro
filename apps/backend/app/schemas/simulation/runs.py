@@ -103,6 +103,7 @@ class SimulationRunMetricsResponse(BaseModel):
     global_results: SimulationRunGlobalResults = Field(default_factory=SimulationRunGlobalResults)
     llm_results: SimulationRunLlmResults = Field(default_factory=SimulationRunLlmResults)
     llm_dataset: dict[str, Any] = Field(default_factory=dict)
+    llm_evaluation: dict[str, Any] = Field(default_factory=dict)
     llm_runtime: dict[str, Any] = Field(default_factory=dict)
     llm_artifacts: list[dict[str, Any]] = Field(default_factory=list)
     client_results: dict[str, SimulationRunClientSeries] = Field(default_factory=dict)

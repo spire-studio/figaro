@@ -67,6 +67,7 @@ export function SimulationRunsTab(props: SimulationPageProps) {
   const isLlmRun = isLlmRunMetrics(runMetrics);
   const llmMetricRounds = llmRounds(runMetrics);
   const llmDataset = runMetrics.llm_dataset ?? {};
+  const llmEvaluation = runMetrics.llm_evaluation ?? {};
   const llmRuntime = runMetrics.llm_runtime ?? {};
   const llmArtifacts = runMetrics.llm_artifacts ?? [];
 
@@ -360,6 +361,28 @@ export function SimulationRunsTab(props: SimulationPageProps) {
                         <div>
                           <p className="text-xs text-muted-foreground">Prompt Template</p>
                           <p>{toDisplayText(llmDataset.prompt_template)}</p>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {isLlmRun && (
+                    <Card className="border-amber-200/60 bg-amber-50/40 dark:border-amber-900/40 dark:bg-amber-950/20">
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm">Evaluation</CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-2 text-sm">
+                        <div>
+                          <p className="text-xs text-muted-foreground">Status</p>
+                          <p>{Boolean(llmEvaluation.enabled) ? "Enabled" : "Disabled"}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Validation Records</p>
+                          <p>{toDisplayText(llmEvaluation.num_records)}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Last Validation Loss</p>
+                          <p>{toDisplayText(llmEvaluation.last_validation_loss)}</p>
                         </div>
                       </CardContent>
                     </Card>

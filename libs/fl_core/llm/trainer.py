@@ -177,6 +177,85 @@ class LlmPeftTrainer:
             },
         )
 
+    def evaluate_adapter(
+        self,
+        *,
+        records: list[SftRecord],
+        adapter_state: dict[str, torch.Tensor] | None,
+        output_dir: str | Path | None = None,
+    ) -> dict[str, float]:
+        """Evaluate a global LoRA adapter on validation SFT records."""
+        self.ensure_ready()
+
+        transformers = __import__("transformers", fromlist=[
+            "AutoModelForCausalLM",
+            "AutoTokenizer",
+            "DataCollatorForLanguageModeling",
+            "Trainer",
+            "TrainingArguments",
+        ])
+        peft = __import__("peft", fromlist=[
+            "LoraConfig",
+            "TaskType",
+            "get_peft_model",
+            "set_peft_model_state_dict",
+            "prepare_model_for_kbit_training",
+        ])
+
+        tokenizer_name = self.config.llm.base_model if self.config.llm.tokenizer == "auto" else self.config.llm.tokenizer
+        tokenizer = transformers.AutoTokenizer.from_pretrained(tokenizer_name, use_fast=True)
+        if getattr(tokenizer, "pad_token", None) is None:
+            tokenizer.pad_token = getattr(tokenizer, "eos_token", None)
+
+        model_kwargs = self._model_load_kwargs(transformers)
+        model = transformers.AutoModelForCausalLM.from_pretrained(self.config.llm.base_model, **model_kwargs)
+        if self.config.peft.quantization != "none":
+            model = peft.prepare_model_for_kbit_training(model)
+
+        lora_config = peft.LoraConfig(
+            r=self.config.peft.rank,
+            lora_alpha=self.config.peft.alpha,
+            lora_dropout=self.config.peft.dropout,
+            target_modules=list(self.config.peft.target_modules),
+            task_type=peft.TaskType.CAUSAL_LM,
+        )
+        model = peft.get_peft_model(model, lora_config)
+        if adapter_state:
+            peft.set_peft_model_state_dict(model, adapter_state)
+
+        dataset = TokenizedSftDataset(
+            records,
+            tokenizer=tokenizer,
+            data_format=self.config.sft.format,
+            prompt_template=self.config.sft.prompt_template,
+            max_seq_length=self.config.llm.max_seq_length,
+        )
+        data_collator = transformers.DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
+
+        eval_output_dir = Path(output_dir) if output_dir is not None else Path(tempfile.mkdtemp(prefix="figaro-llm-eval-"))
+        eval_output_dir.mkdir(parents=True, exist_ok=True)
+        training_args = transformers.TrainingArguments(
+            output_dir=str(eval_output_dir),
+            per_device_eval_batch_size=self.config.evaluation.batch_size,
+            report_to=[],
+            remove_unused_columns=False,
+            fp16=self.config.llm.precision == "fp16" and torch.cuda.is_available(),
+            bf16=self.config.llm.precision == "bf16" and torch.cuda.is_available(),
+        )
+        trainer = transformers.Trainer(
+            model=model,
+            args=training_args,
+            eval_dataset=dataset,
+            data_collator=data_collator,
+        )
+        metrics = trainer.evaluate()
+        loss = _extract_eval_loss(metrics)
+        return {
+            "validation_loss": loss,
+            "num_examples": float(len(records)),
+            "num_tokens": float(dataset.num_tokens),
+        }
+
     def _model_load_kwargs(self, transformers: Any) -> dict[str, Any]:
         kwargs: dict[str, Any] = {}
         dtype = self._torch_dtype()
@@ -213,6 +292,17 @@ def _extract_train_loss(train_output: Any) -> float:
     metrics = getattr(train_output, "metrics", None)
     if isinstance(metrics, dict):
         for key in ("train_loss", "loss"):
+            if key in metrics:
+                try:
+                    return float(metrics[key])
+                except (TypeError, ValueError):
+                    continue
+    return 0.0
+
+
+def _extract_eval_loss(metrics: Any) -> float:
+    if isinstance(metrics, dict):
+        for key in ("eval_loss", "validation_loss", "loss"):
             if key in metrics:
                 try:
                     return float(metrics[key])

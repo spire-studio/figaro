@@ -29,6 +29,15 @@ def test_agent_config_schema_endpoint_returns_ui_metadata(client):
     llm_task_ui = payload["task"]["type"]["ui"]["options"]["llm_peft_sft"]
     assert llm_task_ui["badge"] == "simulation"
     assert "disabled" not in llm_task_ui
+    assert payload["llm"]["base_model"]["type"] == "text"
+    assert "Qwen/Qwen2.5-0.5B-Instruct" in payload["llm"]["base_model"]["options"]
+    assert payload["llm"]["base_model"]["ui"]["option_source"]["path"] == "./models/llm"
+    assert payload["sft"]["dataset_path"]["default"] == "./datasets/llm/train.jsonl"
+    assert "./datasets/llm/train.jsonl" in payload["sft"]["dataset_path"]["options"]
+    assert payload["sft"]["dataset_path"]["ui"]["option_source"]["path"] == "./datasets/llm"
+    assert payload["evaluation"]["dataset_path"]["default"] == "./datasets/llm/validation.jsonl"
+    assert "./datasets/llm/validation.jsonl" in payload["evaluation"]["dataset_path"]["options"]
+    assert payload["evaluation"]["dataset_path"]["ui"]["option_source"]["path"] == "./datasets/llm"
     aggregation_ui = payload["federated"]["aggregation"]["ui"]
     assert aggregation_ui["featured"] is True
     assert aggregation_ui["options"]["fedprox"]["disabled"] is True

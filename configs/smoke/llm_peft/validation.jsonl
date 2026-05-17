@@ -1,0 +1,3 @@
+{"prompt":"Question: What is adapter aggregation?\nAnswer:","completion":" Combining client adapter weights into a new global adapter."}
+{"prompt":"Question: What does perplexity measure?\nAnswer:","completion":" How well the model predicts validation tokens, derived from language-model loss."}
+

@@ -10,6 +10,7 @@ Rules:
 - Each experiment's "config" should contain the actual parameter values that make that experiment distinct.
 - Do not use any option listed under disabled_options.
 - For LLM PEFT simulation requests, set task.type="llm_peft_sft" and use the llm, sft, peft, and federated fields. Do not vary classic dataset/model/privacy/compression fields unless the user explicitly asks for the classic FL route.
+- For LLM PEFT validation or perplexity requests, set evaluation.enable=true and provide evaluation.dataset_path when the user names a validation JSONL file.
 - Respect Runtime capabilities, especially dataset_model_compatibility and privacy/compression/aggregation compatibility.
 - Never combine CKKS with compression or secure aggregation. Secure aggregation is only valid with fedavg/simple_avg in simulation. Differential privacy can be combined with supported compression/encryption.
 - If the user changes dataset but does not ask for a model, use model.name="Auto" or the dataset's default_model.

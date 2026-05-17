@@ -1,0 +1,5 @@
+{"prompt":"Question: What is federated learning?\nAnswer:","completion":" Training a shared model across clients without centralizing their raw data."}
+{"prompt":"Question: What does LoRA train?\nAnswer:","completion":" Low-rank adapter weights while keeping the base model frozen."}
+{"prompt":"Question: Why use a validation set?\nAnswer:","completion":" To estimate generalization with loss and perplexity after training rounds."}
+{"prompt":"Question: What is PEFT?\nAnswer:","completion":" Parameter-efficient fine-tuning that updates a small set of trainable parameters."}
+

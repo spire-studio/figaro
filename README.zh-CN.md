@@ -198,6 +198,9 @@ figaro/
 │   ├── compression/          # Top-K 稀疏化
 │   └── llm/                  # LLM PEFT 运行时工具
 ├── configs/                  # 实验配置
+├── datasets/llm/             # 本地 LLM SFT / 评测 JSONL 文件
+├── models/llm/               # 本地 Hugging Face 兼容 LLM 目录
+├── skill/                    # 本地操作说明 skill
 ├── scripts/                  # Docker 部署脚本
 └── .github/workflows/        # CI 流水线
 ```
@@ -220,8 +223,8 @@ figaro/
 - [x] **JSONL SFT 数据管线** —— 支持 prompt/completion 与 messages 两类 JSONL 格式，支持确定性的客户端数据切分，并提供 plain/chat 风格的文本渲染。
 - [x] **Adapter 权重联邦聚合** —— 按客户端样本数聚合 LoRA/PEFT Adapter Tensor，持久化全局 Adapter 产物，记录 SHA-256 血缘，并支持从历史全局 Adapter warm start 续跑。
 - [x] **LLM 运行依赖与指标** —— 主项目依赖已包含 `transformers`、`peft`、`accelerate`、`safetensors`、`bitsandbytes`；后端指标已包含 train loss、perplexity、token throughput、adapter size、运行状态、数据摘要和 Adapter artifact lineage。
-- [ ] **前端与 Agent 的 LLM 运行体验** —— 在 schema-driven UI 与 Agent 规划流中开放 LLM 路线，并补齐 LLM 指标曲线和 Adapter 产物视图。
-- [ ] **评测与 Smoke 配置** —— 增加验证集、evaluation loss/perplexity 计算，以及可复现的 tiny-model LLM PEFT smoke config。
+- [x] **前端与 Agent 的 LLM 运行体验** —— 已在 schema-driven Simulation UI 与 Agent 规划流中开放 LLM 路线，支持按任务类型显示/隐藏字段、LLM 指标曲线、本地模型/数据集选择，以及 Adapter Lineage 产物视图。
+- [x] **评测与 Smoke 配置** —— 已增加验证集 JSONL 配置、全局 Adapter 聚合后的逐轮 evaluation loss/perplexity 计算、标准化评测指标，以及 tiny-model LLM PEFT smoke fixture/config。
 
 **Phase 3：平台化与企业级协作**
 - [ ] **多租户与细粒度权限** —— 构建多用户隔离的项目空间 (Workspaces)，引入基于角色的访问控制 (RBAC) 和完整的操作审计日志。

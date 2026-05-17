@@ -106,12 +106,13 @@ llm:
     group: "LLM PEFT"
   base_model:
     type: "text"
+    options: ["Qwen/Qwen2.5-0.5B-Instruct"]
     default: "Qwen/Qwen2.5-0.5B-Instruct"
     ui:
       label: "Base model"
       featured: true
       group: "LLM PEFT"
-      prompt_hint: "Hugging Face model id or local path for the frozen base model."
+      prompt_hint: "Hugging Face model id or a local model directory under ./models/llm."
   tokenizer:
     type: "text"
     default: "auto"
@@ -149,12 +150,13 @@ sft:
     group: "LLM PEFT"
   dataset_path:
     type: "text"
-    default: "./datasets/sft/train.jsonl"
+    options: ["./datasets/llm/train.jsonl"]
+    default: "./datasets/llm/train.jsonl"
     ui:
       label: "Dataset path"
       featured: true
       group: "LLM PEFT"
-      prompt_hint: "Path to JSONL supervised fine-tuning data."
+      prompt_hint: "Path to JSONL supervised fine-tuning data under ./datasets/llm."
   format:
     type: "select"
     options: ["prompt_completion", "messages"]
@@ -263,6 +265,48 @@ peft:
           badge: "planned"
           disabled: true
           description: "Reserved for the QLoRA runtime milestone."
+
+evaluation:
+  role: "server"
+  depends_on: "task.type == llm_peft_sft"
+  ui:
+    label: "LLM Evaluation"
+    group: "LLM PEFT"
+  enable:
+    type: "bool"
+    default: false
+    ui:
+      label: "Enable evaluation"
+      featured: true
+      group: "LLM PEFT"
+      prompt_hint: "Run validation loss/perplexity after each global adapter aggregation round."
+  dataset_path:
+    type: "text"
+    options: ["./datasets/llm/validation.jsonl"]
+    default: "./datasets/llm/validation.jsonl"
+    depends_on: "evaluation.enable == true"
+    ui:
+      label: "Validation dataset"
+      featured: true
+      group: "LLM PEFT"
+      prompt_hint: "Validation JSONL path under ./datasets/llm."
+  max_samples:
+    type: "number"
+    min: 1
+    default: 128
+    depends_on: "evaluation.enable == true"
+    ui:
+      label: "Eval max samples"
+      group: "LLM PEFT"
+  batch_size:
+    type: "number"
+    min: 1
+    max: 128
+    default: 1
+    depends_on: "evaluation.enable == true"
+    ui:
+      label: "Eval batch size"
+      group: "LLM PEFT"
 
 federated:
   role: "server"

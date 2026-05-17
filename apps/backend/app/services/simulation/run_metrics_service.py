@@ -129,6 +129,7 @@ class SimulationRunMetricsService:
                 "adapter_size_bytes": [],
             },
             "llm_dataset": {},
+            "llm_evaluation": {},
             "llm_runtime": {},
             "llm_artifacts": [],
             "client_results": {},
@@ -256,6 +257,10 @@ class SimulationRunMetricsService:
         llm_dataset = payload.get("llm_dataset")
         if isinstance(llm_dataset, dict):
             normalized["llm_dataset"] = llm_dataset
+
+        llm_evaluation = payload.get("llm_evaluation")
+        if isinstance(llm_evaluation, dict):
+            normalized["llm_evaluation"] = llm_evaluation
 
         llm_runtime = payload.get("llm_runtime")
         if isinstance(llm_runtime, dict):

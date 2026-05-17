@@ -95,6 +95,7 @@ export const EMPTY_RUN_METRICS: RunMetrics = {
     adapter_size_bytes: [],
   },
   llm_dataset: {},
+  llm_evaluation: {},
   llm_runtime: {},
   llm_artifacts: [],
   client_results: {},
