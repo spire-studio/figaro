@@ -12,6 +12,7 @@ import {
   type AgentRunResponse,
 } from "../../api/agent";
 import type { AgentPageProps, AgentWorkflowStep, AgentPlanDraft } from "../../pages/types";
+import { latestLlmLoss } from "../simulation/llm-metrics";
 import { toErrorMessage } from "../simulation/utils";
 import { removeValueByPath, setConfigValue } from "./schema";
 
@@ -43,12 +44,12 @@ function toHistorySummary(progress: AgentOptimizeProgressResponse): AgentOptimiz
   if (progress.optimization_job_id === null) {
     return null;
   }
-  const bestMetrics = progress.best_metrics as Record<string, unknown> | null;
-  const globalResults = (bestMetrics?.global_results ?? null) as Record<string, unknown> | null;
-  const accuracy = Array.isArray(globalResults?.global_accuracy) ? globalResults?.global_accuracy : [];
+  const llmLoss = latestLlmLoss(progress.best_metrics);
+  const accuracy = progress.best_metrics?.global_results?.global_accuracy ?? [];
   const lastAccuracy = accuracy.length > 0 && typeof accuracy[accuracy.length - 1] === "number"
-    ? (accuracy[accuracy.length - 1] as number)
+    ? accuracy[accuracy.length - 1]
     : null;
+  const bestScore = llmLoss !== null ? -llmLoss : lastAccuracy;
   return {
     optimization_job_id: progress.optimization_job_id,
     task_id: progress.task_id,
@@ -62,7 +63,7 @@ function toHistorySummary(progress: AgentOptimizeProgressResponse): AgentOptimiz
     max_iterations: progress.max_iterations,
     current_iteration: progress.current_iteration,
     completed_iterations: progress.completed_iterations,
-    best_score: lastAccuracy,
+    best_score: bestScore,
     created_at: progress.created_at ?? new Date().toISOString(),
     updated_at: progress.updated_at ?? new Date().toISOString(),
     finished_at: progress.finished_at,
@@ -223,6 +224,11 @@ export function useAgentController(): AgentPageProps {
       
       setProgress(data);
       setActiveTaskId(data.task_id);
+      setSelectedHistory(data);
+      if (data.optimization_job_id !== null) {
+        setSelectedHistoryJobId(data.optimization_job_id);
+      }
+      upsertHistoryJob(toHistorySummary(data));
       setWorkflowStep("running");
     } catch (error) {
       notifyError(error, "agent-execute");
@@ -264,6 +270,7 @@ export function useAgentController(): AgentPageProps {
       }
       upsertHistoryJob(toHistorySummary(data));
       setJobName(makeDefaultJobName());
+      setWorkflowStep("running");
     } catch (error) {
       notifyError(error, "agent-optimize");
       setBusy(false);

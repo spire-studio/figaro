@@ -19,6 +19,7 @@ class AdapterClientUpdate:
 def aggregate_adapter_state_dicts(
     updates: list[AdapterClientUpdate],
     *,
+    strategy: str = "weighted_avg",
     device: torch.device | str | None = None,
 ) -> dict[str, torch.Tensor]:
     """Weighted-average LoRA/PEFT adapter tensors by client example count."""
@@ -30,7 +31,7 @@ def aggregate_adapter_state_dicts(
         raise ValueError("adapter_state must not be empty")
 
     target_device = torch.device(device) if device is not None else torch.device("cpu")
-    weights = _normalized_example_weights(updates)
+    weights = _normalized_weights(updates, strategy=strategy)
     aggregated: dict[str, torch.Tensor] = {}
 
     for key in reference_keys:
@@ -45,6 +46,15 @@ def aggregate_adapter_state_dicts(
         aggregated[key] = accumulator.detach().cpu()
 
     return aggregated
+
+
+def _normalized_weights(updates: list[AdapterClientUpdate], *, strategy: str) -> list[float]:
+    normalized_strategy = strategy.strip().lower()
+    if normalized_strategy in {"fedavg", "weighted_avg"}:
+        return _normalized_example_weights(updates)
+    if normalized_strategy == "simple_avg":
+        return [1.0 / len(updates)] * len(updates)
+    raise ValueError(f"Unsupported LLM adapter aggregation strategy: {strategy}")
 
 
 def _normalized_example_weights(updates: list[AdapterClientUpdate]) -> list[float]:
@@ -65,4 +75,3 @@ def _validate_update_tensor(update: AdapterClientUpdate, key: str, reference: to
         raise ValueError(f"Adapter tensor {key!r} has mismatched dtype: {tensor.dtype} != {reference.dtype}")
     if not torch.is_floating_point(tensor):
         raise TypeError(f"Adapter tensor {key!r} must be floating point")
-

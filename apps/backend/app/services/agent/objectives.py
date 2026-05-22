@@ -1,14 +1,13 @@
 """
 Objective helpers for the bench-mode experiment executor.
 
-Bench mode does not optimize — it runs experiments and reports results.
-The objective system is kept minimal for compatibility.
+Bench mode runs a planned batch of experiments and reports comparable scores.
+The objective surface is intentionally small for API compatibility.
 """
 
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any
 
 
 class AgentOptimizationObjective(str, Enum):
@@ -35,7 +34,11 @@ def resolve_objective(
     goal: str,
     requested_objective: str | AgentOptimizationObjective | None,
 ) -> AgentOptimizationObjective:
-    """Resolve the effective objective — always accuracy in bench mode."""
+    """Resolve the effective objective.
+
+    LLM PEFT runs are scored by negative loss in the summary layer, but the
+    public objective enum remains accuracy-only for the current Agent API.
+    """
     return AgentOptimizationObjective.ACCURACY
 
 
@@ -57,7 +60,7 @@ def is_better_score(
     candidate_score: float | None,
     reference_score: float | None,
 ) -> bool:
-    """Higher accuracy is always better in bench mode."""
+    """Higher comparable score is better."""
     if candidate_score is None:
         return False
     if reference_score is None:

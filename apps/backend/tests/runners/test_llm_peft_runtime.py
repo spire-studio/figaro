@@ -146,6 +146,7 @@ def test_llm_peft_runtime_runs_client_training_and_aggregates_adapters(tmp_path,
     metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
     assert metrics["llm_results"]["rounds"] == [1]
     assert metrics["llm_results"]["train_loss"] == [1.5]
+    assert metrics["llm_results"]["validation_loss"] == []
     assert metrics["llm_runtime"]["status"] == "completed"
     assert len(metrics["llm_artifacts"]) == 1
     assert metrics["llm_artifacts"][0]["round"] == 1

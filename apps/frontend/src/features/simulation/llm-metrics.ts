@@ -14,6 +14,16 @@ function numericList(value: unknown): number[] {
   return value.map((item) => Number(item)).filter((item) => Number.isFinite(item));
 }
 
+function lastFiniteNumber(value: unknown): number | null {
+  const values = numericList(value);
+  return values.length > 0 ? values[values.length - 1] : null;
+}
+
+function lastPositiveNumber(value: unknown): number | null {
+  const values = numericList(value).filter((item) => item > 0);
+  return values.length > 0 ? values[values.length - 1] : null;
+}
+
 function recordOf(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
@@ -63,6 +73,10 @@ export function llmTrainLossSeries(metrics: RunMetrics | null | undefined): Line
 
 export function llmValidationLossSeries(metrics: RunMetrics | null | undefined): LineSeries[] {
   return llmMetricSeries(metrics, "validation_loss", "Validation Loss", LLM_COLORS.validationLoss);
+}
+
+export function latestLlmLoss(metrics: RunMetrics | null | undefined): number | null {
+  return lastPositiveNumber(metrics?.llm_results?.validation_loss) ?? lastFiniteNumber(metrics?.llm_results?.train_loss);
 }
 
 export function llmPerplexitySeries(metrics: RunMetrics | null | undefined): LineSeries[] {

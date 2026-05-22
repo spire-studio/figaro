@@ -66,7 +66,10 @@ def append_llm_round_metrics(
     llm_results = payload.setdefault("llm_results", {})
     llm_results.setdefault("rounds", []).append(int(round_num))
     llm_results.setdefault("train_loss", []).append(float(train_loss))
-    llm_results.setdefault("validation_loss", []).append(float(validation_loss) if validation_loss is not None else 0.0)
+    if validation_loss is not None:
+        llm_results.setdefault("validation_loss", []).append(float(validation_loss))
+    else:
+        llm_results.setdefault("validation_loss", [])
     llm_results.setdefault("perplexity", []).append(_perplexity(validation_loss if validation_loss is not None else train_loss))
     llm_results.setdefault("token_throughput", []).append(float(token_throughput) if token_throughput is not None else 0.0)
     llm_results.setdefault("adapter_size_bytes", []).append(int(adapter_size_bytes or 0))

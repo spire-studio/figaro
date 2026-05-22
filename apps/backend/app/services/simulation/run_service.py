@@ -21,7 +21,7 @@ from app.models.simulation import SimulationRun, SimulationRunLog, SimulationRun
 from app.repositories.simulation import SimulationJobRepository, SimulationRunRepository
 from app.services.simulation.run_metrics_service import SimulationRunMetricsService
 
-RESULT_PATH_PATTERN = re.compile(r"结果已保存到[:：]\s*(.+)$")
+RESULT_PATH_PATTERN = re.compile(r"\u7ed3\u679c\u5df2\u4fdd\u5b58\u5230[:\uff1a]\s*(.+)$")
 LOG_LEVEL_PREFIX_PATTERN = re.compile(
     r"^\s*(DEBUG|INFO|WARNING|WARN|ERROR|CRITICAL)\b[\s:\-]",
     re.IGNORECASE,
@@ -283,6 +283,7 @@ class SimulationRunService:
                 )
                 await repository.add_log(run_id, f"run finished with exit_code={exit_code}")
 
+                metrics_persisted = False
                 if result_path:
                     await repository.add_result(
                         run_id=run_id,
@@ -295,10 +296,17 @@ class SimulationRunService:
                     )
                     if normalized is not None:
                         await repository.update_run_metrics(run, normalized)
+                        metrics_persisted = True
 
-                if not run.metrics_json:
+                if not metrics_persisted:
                     guessed = self.metrics_service.guess_live_result_file_for_run(run)
                     if guessed is not None:
+                        await repository.add_result(
+                            run_id=run_id,
+                            artifact_type=TRAINING_RESULT_ARTIFACT,
+                            path=str(guessed),
+                            metadata_json={"source": "live_results_fallback"},
+                        )
                         normalized = self.metrics_service.load_metrics_file(guessed)
                         if normalized is not None:
                             await repository.update_run_metrics(run, normalized)

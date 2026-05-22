@@ -15,6 +15,7 @@ import {
   llmThroughputSeries,
   llmTrainLossSeries,
   llmValidationLossSeries,
+  latestLlmLoss,
 } from "../../simulation/llm-metrics";
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -29,25 +30,13 @@ const CHART_COLORS = [
   "#06b6d4"  // Cyan
 ];
 
-function lastNumber(value: unknown): number | null {
-  if (!Array.isArray(value) || value.length === 0) return null;
-  const parsed = Number(value[value.length - 1]);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function latestLlmLoss(metrics: any): number | null {
-  return lastNumber(metrics?.llm_results?.validation_loss) ?? lastNumber(metrics?.llm_results?.train_loss);
-}
-
 export function AgentRunDashboard({ progress }: AgentPageProps) {
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [liveMetrics, setLiveMetrics] = useState<any>(null);
 
-  if (!progress) return null;
-
-  const currentExp = progress.current_experiment;
-  const currentPlan = progress.current_plan;
-  const experiments = progress.experiments || [];
+  const currentExp = progress?.current_experiment;
+  const currentPlan = progress?.current_plan;
+  const experiments = progress?.experiments || [];
   const activeRunId = selectedRunId 
     || currentExp?.run_id 
     || (experiments.length > 0 ? experiments[experiments.length - 1].run_id : null);
@@ -80,6 +69,8 @@ export function AgentRunDashboard({ progress }: AgentPageProps) {
       clearInterval(intervalId);
     };
   }, [activeRunId]);
+
+  if (!progress) return null;
 
   const activeExpMetadata = experiments.find((e: any) => e.run_id === activeRunId) 
                          || (currentExp?.run_id === activeRunId ? currentExp : null);

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import random
+import re
 import sys
 import time
 from pathlib import Path
@@ -105,6 +106,7 @@ def run_llm_peft_runtime(config_path: Path) -> bool:
                 "missing_dependencies": missing,
             }
             _write_metrics(runtime_config, metrics)
+            print(f"\u7ed3\u679c\u5df2\u4fdd\u5b58\u5230: {_result_path(runtime_config)}")
             return False
 
         trainer = LlmPeftTrainer(runtime_config)
@@ -152,7 +154,10 @@ def run_llm_peft_runtime(config_path: Path) -> bool:
                 updates.append(update)
                 _append_client_metrics(metrics, client_id=client_id, update=update)
 
-            global_adapter_state = aggregate_adapter_state_dicts(updates)
+            global_adapter_state = aggregate_adapter_state_dicts(
+                updates,
+                strategy=runtime_config.federated.aggregation,
+            )
             adapter_size = adapter_state_size_bytes(global_adapter_state)
             adapter_path = save_adapter_artifact(
                 adapter_dir / f"round_{round_num}_global_adapter.pt",
@@ -221,6 +226,7 @@ def run_llm_peft_runtime(config_path: Path) -> bool:
         }
         _write_metrics(runtime_config, metrics)
         print("LLM_PEFT_RUNTIME_COMPLETED")
+        print(f"\u7ed3\u679c\u5df2\u4fdd\u5b58\u5230: {_result_path(runtime_config)}")
         return True
     except Exception as exc:
         print(f"LLM_PEFT_RUNTIME_FAILED: {exc}")
@@ -250,19 +256,33 @@ def _result_path(config: LlmPeftRuntimeConfig) -> Path:
 
 
 def _runtime_work_dir(config: LlmPeftRuntimeConfig) -> Path:
-    path = PROJECT_ROOT / config.results_dir / "llm_peft_work"
+    path = PROJECT_ROOT / config.results_dir / "llm_peft_work" / _run_artifact_id()
     path.mkdir(parents=True, exist_ok=True)
     return path
 
 
 def _adapter_dir(config: LlmPeftRuntimeConfig) -> Path:
-    path = PROJECT_ROOT / config.results_dir / "llm_peft_adapters"
+    path = PROJECT_ROOT / config.results_dir / "llm_peft_adapters" / _run_artifact_id()
     path.mkdir(parents=True, exist_ok=True)
     return path
 
 
 def _resolve_runtime_path(path: Path) -> Path:
     return path if path.is_absolute() else PROJECT_ROOT / path
+
+
+def _run_artifact_id() -> str:
+    override_name = os.environ.get("FIGARO_RESULTS_FILE", "").strip()
+    if not override_name:
+        return "manual"
+    stem = Path(override_name).name
+    if stem.endswith(".json"):
+        stem = stem[:-5]
+    prefix = "live_results_"
+    if stem.startswith(prefix):
+        stem = stem[len(prefix):]
+    sanitized = re.sub(r"[^A-Za-z0-9_.-]+", "_", stem).strip("._-")
+    return sanitized or "manual"
 
 
 def _select_clients(client_ids: list[int], *, clients_per_round: int, rng: random.Random) -> list[int]:

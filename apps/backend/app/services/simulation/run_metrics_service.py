@@ -43,9 +43,6 @@ class SimulationRunMetricsService:
         if not run:
             raise exceptions.RunNotFound("Run not found")
 
-        if run.status in TERMINAL_RUN_STATUSES and isinstance(run.metrics_json, dict) and run.metrics_json:
-            return self._normalize_metrics_payload(run.metrics_json)
-
         live_result_path = self._results_dir() / self._build_live_results_filename(run_id)
         loaded = self._load_metrics_file(live_result_path)
         if loaded is not None:

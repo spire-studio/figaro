@@ -44,7 +44,7 @@ logger = get_logger(__name__)
 # Shared constants (mirrored from simulation run_service / run_metrics_service)
 # ---------------------------------------------------------------------------
 
-RESULT_PATH_PATTERN = re.compile(r"结果已保存到[:：]\s*(.+)$")
+RESULT_PATH_PATTERN = re.compile(r"\u7ed3\u679c\u5df2\u4fdd\u5b58\u5230[:\uff1a]\s*(.+)$")
 LOG_LEVEL_PREFIX_PATTERN = re.compile(
     r"^\s*(DEBUG|INFO|WARNING|WARN|ERROR|CRITICAL)\b[\s:\-]",
     re.IGNORECASE,
@@ -480,13 +480,11 @@ class AgentExperimentRunService:
         run = await self.repo.get_run(run_id)
         if not run:
             raise exceptions.RunNotFound("Run not found")
-        # If terminal and already has metrics, return them
-        if run.status in TERMINAL_RUN_STATUSES and isinstance(run.metrics_json, dict) and run.metrics_json:
-            return self._normalize_metrics_payload(run.metrics_json)
         # Try live result file
         live_result_path = self._results_dir() / self._build_live_results_filename(run_id)
         loaded = self._load_metrics_file(live_result_path)
         if loaded is not None:
+            await self._persist_run_metrics_if_changed(run, loaded)
             return loaded
 
         # Try result artifacts
@@ -496,12 +494,22 @@ class AgentExperimentRunService:
             artifact_path = self._resolve_result_artifact_path(artifact.path)
             loaded = self._load_metrics_file(artifact_path)
             if loaded is not None:
+                await self._persist_run_metrics_if_changed(run, loaded)
                 return loaded
 
         if isinstance(run.metrics_json, dict) and run.metrics_json:
             return self._normalize_metrics_payload(run.metrics_json)
 
         return self._empty_metrics_payload()
+
+    async def _persist_run_metrics_if_changed(self, run: AgentExperimentRun, metrics: dict[str, Any]) -> None:
+        current = run.metrics_json if isinstance(run.metrics_json, dict) else {}
+        if self._stable_json(current) == self._stable_json(metrics):
+            return
+
+        await self.repo.update_run_metrics(run, metrics)
+        await self.session.commit()
+        await self.session.refresh(run)
 
     async def delete_run(self, run_id: str) -> None:
         run = await self.get_run(run_id)
@@ -605,6 +613,7 @@ class AgentExperimentRunService:
                 )
                 await repo.add_log(run_id, f"run finished with exit_code={exit_code}")
 
+                metrics_persisted = False
                 if result_path:
                     await repo.add_result(
                         run_id=run_id,
@@ -616,10 +625,17 @@ class AgentExperimentRunService:
                     normalized = self._load_metrics_file(resolved)
                     if normalized is not None:
                         await repo.update_run_metrics(run, normalized)
+                        metrics_persisted = True
 
-                if not run.metrics_json:
+                if not metrics_persisted:
                     guessed = self._guess_live_result_file_for_run(run)
                     if guessed is not None:
+                        await repo.add_result(
+                            run_id=run_id,
+                            artifact_type=TRAINING_RESULT_ARTIFACT,
+                            path=str(guessed),
+                            metadata_json={"source": "live_results_fallback"},
+                        )
                         normalized = self._load_metrics_file(guessed)
                         if normalized is not None:
                             await repo.update_run_metrics(run, normalized)
@@ -878,6 +894,10 @@ class AgentExperimentRunService:
             except (TypeError, ValueError):
                 continue
         return output
+
+    @staticmethod
+    def _stable_json(value: Any) -> str:
+        return json.dumps(value, sort_keys=True, ensure_ascii=False)
 
     # -- log level inference ---------------------------------------------
 

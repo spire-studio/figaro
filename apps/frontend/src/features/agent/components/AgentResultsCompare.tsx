@@ -16,6 +16,7 @@ import {
   llmThroughputSeries,
   llmTrainLossSeries,
   llmValidationLossSeries,
+  latestLlmLoss,
   selectedClientsText,
   shortHash,
 } from "../../simulation/llm-metrics";
@@ -118,16 +119,6 @@ function formatDiffValue(value: unknown): string {
   if (value === null || value === undefined) return "-";
   if (typeof value === "string") return value;
   return JSON.stringify(value);
-}
-
-function lastNumber(value: unknown): number | null {
-  if (!Array.isArray(value) || value.length === 0) return null;
-  const parsed = Number(value[value.length - 1]);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function latestLlmLoss(metrics: any): number | null {
-  return lastNumber(metrics?.llm_results?.validation_loss) ?? lastNumber(metrics?.llm_results?.train_loss);
 }
 
 function experimentRankScore(experiment: any): number {

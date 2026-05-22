@@ -136,6 +136,21 @@ cd apps/frontend && pnpm install && pnpm dev
 - Frontend: `http://localhost:5173`
 - Backend API: `http://localhost:8000/docs`
 
+### LLM PEFT smoke run
+
+The LLM PEFT smoke config uses a tiny local Hugging Face-compatible model so it can run without downloading a base model. Generate it once before selecting `configs/smoke/llm_peft_simulation.yaml` in the Simulation UI:
+
+```bash
+uv run python scripts/create_tiny_llm_fixture.py
+```
+
+For a direct PowerShell smoke run:
+
+```powershell
+$env:PYTHONPATH="libs;apps/backend/runners"
+uv run python -c "from pathlib import Path; from runtime_dispatcher import run_runtime; raise SystemExit(0 if run_runtime(Path('configs/smoke/llm_peft_simulation.yaml')) else 1)"
+```
+
 ### Distributed deployment
 
 ```bash
@@ -223,7 +238,7 @@ PRs welcome! Figaro is meant to be a readable, research-friendly FL platform.
 - [x] **Adapter-Only Federated Aggregation** — Aggregates LoRA/PEFT adapter tensors by client example count, persists global adapter artifacts, records SHA-256 lineage, and supports warm-starting from a previous global adapter.
 - [x] **LLM Runtime Dependencies & Metrics** — Core project dependencies include `transformers`, `peft`, `accelerate`, `safetensors`, and `bitsandbytes`; backend metrics include train loss, perplexity, token throughput, adapter size, runtime status, dataset summary, and adapter artifact lineage.
 - [x] **Frontend & Agent UX for LLM Runs** — Exposes the LLM route in the schema-driven Simulation and Agent planning flows, with task-aware field visibility, LLM-specific metric charts, local model/dataset selection, and Adapter Lineage artifact views.
-- [x] **Evaluation Harness** — Adds validation JSONL configuration, per-round evaluation loss/perplexity calculation after global adapter aggregation, normalized evaluation metrics, and smoke fixtures/configs for tiny-model LLM PEFT runs.
+- [x] **Evaluation Harness** — Adds validation JSONL configuration, per-round evaluation loss/perplexity calculation after global adapter aggregation, normalized evaluation metrics, and a generated tiny-model smoke config for LLM PEFT runs.
 
 **Phase 3: Enterprise & Team Collaboration**
 - [ ] **Multi-Tenant Workspaces** — Isolated project environments with Role-Based Access Control (RBAC) and comprehensive audit logging.

@@ -73,7 +73,7 @@ export function AgentPage(props: AgentPageProps) {
         {props.workflowStep === "home" && <AgentExperimentStudio {...props} />}
         {props.workflowStep === "preview" && <AgentPlanPreview {...props} />}
         {props.workflowStep === "running" && <AgentRunDashboard {...props} />}
-        {/* {props.workflowStep === "results" && <AgentResultsCompare {...props} />} */}
+        {props.workflowStep === "results" && <AgentResultsCompare {...props} />}
       </main>
     </div>
   );

@@ -201,6 +201,18 @@ def test_empty_llm_metrics_payload_and_round_append(tmp_path):
     assert payload["global_results"]["global_loss"] == [1.0]
 
 
+def test_llm_round_append_without_validation_keeps_validation_series_empty(tmp_path):
+    config = normalize_llm_peft_config(_base_config(tmp_path))
+    payload = empty_llm_metrics_payload(config)
+    append_llm_round_metrics(payload, round_num=1, train_loss=2.0, token_throughput=12.5)
+
+    assert payload["llm_results"]["rounds"] == [1]
+    assert payload["llm_results"]["train_loss"] == [2.0]
+    assert payload["llm_results"]["validation_loss"] == []
+    assert payload["llm_results"]["perplexity"][0] == pytest.approx(7.38905, rel=1e-4)
+    assert payload["global_results"]["global_loss"] == [2.0]
+
+
 def test_tokenized_sft_dataset_uses_rendered_text():
     class FakeTokenizer:
         def __call__(self, text, *, truncation, max_length, padding):
