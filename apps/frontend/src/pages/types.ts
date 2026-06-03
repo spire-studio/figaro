@@ -261,6 +261,7 @@ export type AgentPageProps = {
   selectExperiment: (experimentId: number) => Promise<void>;
   selectHistoryJob: (optimizationJobId: number) => Promise<void>;
   refreshHistoryJobs: (filters?: AgentHistoryFilters) => Promise<void>;
+  refreshLlmResources: () => Promise<void>;
   setConfigConstraint: (path: string, value: unknown) => void;
   clearConfigConstraint: (path: string) => void;
   setGoal: Dispatch<SetStateAction<string>>;

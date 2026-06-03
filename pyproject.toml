@@ -17,6 +17,7 @@ dependencies = [
     "pydantic-settings>=2.10.1",
     "psycopg[binary]>=3.2.9",
     "protobuf>=6.31.1",
+    "pyarrow>=16.1.0",
     "pyyaml>=6.0.3",
     "safetensors>=0.4.5",
     "sqlalchemy>=2.0.43",

@@ -19,6 +19,12 @@ from app.core import exceptions
 from app.core.db import AsyncSessionLocal
 from app.models.simulation import SimulationRun, SimulationRunLog, SimulationRunResult, SimulationRunStatus
 from app.repositories.simulation import SimulationJobRepository, SimulationRunRepository
+from app.services.run_artifacts import (
+    live_results_filename,
+    run_artifact_timestamp,
+    run_config_filename,
+    run_log_filename,
+)
 from app.services.simulation.run_metrics_service import SimulationRunMetricsService
 
 RESULT_PATH_PATTERN = re.compile(r"\u7ed3\u679c\u5df2\u4fdd\u5b58\u5230[:\uff1a]\s*(.+)$")
@@ -199,18 +205,22 @@ class SimulationRunService:
         )
         await self.run_repository.create_run(run)
 
-        config_path = self._write_run_config(run.id, config_json)
+        artifact_timestamp = run_artifact_timestamp(run.created_at)
+        config_path = self._write_run_config(run.id, config_json, artifact_timestamp=artifact_timestamp)
         await self.run_repository.add_result(
             run_id=run.id,
             artifact_type=RUN_CONFIG_ARTIFACT,
             path=str(config_path),
-            metadata_json={"source": "run_config"},
+            metadata_json={"source": "run_config", "artifact_timestamp": artifact_timestamp},
         )
 
         command = self._build_train_command(config_path)
         run.command = " ".join(command)
 
-        live_results_path = self._results_dir() / self._build_live_results_filename(run.id)
+        live_results_path = self._results_dir() / self._build_live_results_filename(
+            run.id,
+            artifact_timestamp=artifact_timestamp,
+        )
         child_env = self._build_run_environment(live_results_path)
         process = await self._spawn_subprocess(command, env=child_env)
 
@@ -225,16 +235,24 @@ class SimulationRunService:
         await self.session.refresh(run)
 
         self._processes[run.id] = process
-        self._tasks[run.id] = asyncio.create_task(self._watch_process(run.id, process))
+        self._tasks[run.id] = asyncio.create_task(
+            self._watch_process(run.id, process, artifact_timestamp=artifact_timestamp)
+        )
         return run
 
 
-    async def _watch_process(self, run_id: str, process: asyncio.subprocess.Process) -> None:
+    async def _watch_process(
+        self,
+        run_id: str,
+        process: asyncio.subprocess.Process,
+        *,
+        artifact_timestamp: str | None = None,
+    ) -> None:
         """
         Consume subprocess streams and persist final run status/artifacts.
         """
         result_path: str | None = None
-        log_path = self._simulation_log_path(run_id)
+        log_path = self._simulation_log_path(run_id, artifact_timestamp=artifact_timestamp)
 
         async def consume(stream: asyncio.StreamReader, level: str, prefix: str) -> None:
             nonlocal result_path
@@ -248,7 +266,7 @@ class SimulationRunService:
                     if not message:
                         continue
 
-                    file_obj.write(f"[{prefix}] {message}\\n")
+                    file_obj.write(f"[{prefix}] {message}\n")
                     file_obj.flush()
 
                     match = RESULT_PATH_PATTERN.search(message)
@@ -289,7 +307,10 @@ class SimulationRunService:
                         run_id=run_id,
                         artifact_type=TRAINING_RESULT_ARTIFACT,
                         path=result_path,
-                        metadata_json={"source": "process_output"},
+                        metadata_json={
+                            "source": "process_output",
+                            "artifact_timestamp": artifact_timestamp,
+                        },
                     )
                     normalized = self.metrics_service.load_metrics_file(
                         self.metrics_service.resolve_result_artifact_path(result_path)
@@ -305,7 +326,10 @@ class SimulationRunService:
                             run_id=run_id,
                             artifact_type=TRAINING_RESULT_ARTIFACT,
                             path=str(guessed),
-                            metadata_json={"source": "live_results_fallback"},
+                            metadata_json={
+                                "source": "live_results_fallback",
+                                "artifact_timestamp": artifact_timestamp,
+                            },
                         )
                         normalized = self.metrics_service.load_metrics_file(guessed)
                         if normalized is not None:
@@ -351,33 +375,55 @@ class SimulationRunService:
         return path
 
 
-    def _simulation_log_path(self, run_id: str, client_id: int | None = None) -> Path:
+    def _simulation_log_path(
+        self,
+        run_id: str,
+        client_id: int | None = None,
+        *,
+        artifact_timestamp: str | None = None,
+    ) -> Path:
         """
         Build simulation log path for server or client role.
         """
         suffix = "server" if client_id is None else f"client_{client_id}"
-        return self._runtime_log_dir() / f"{run_id}_{suffix}.log"
+        if artifact_timestamp is None:
+            return self._runtime_log_dir() / f"{run_id}_{suffix}.log"
+        return self._runtime_log_dir() / run_log_filename(
+            run_id,
+            timestamp=artifact_timestamp,
+            role=suffix,
+        )
 
 
-    def _build_live_results_filename(self, run_id: str) -> str:
+    def _build_live_results_filename(self, run_id: str, *, artifact_timestamp: str | None = None) -> str:
         """
         Build live result filename for one run ID.
         """
-        return f"live_results_{run_id}.json"
+        if artifact_timestamp is None:
+            return f"live_results_{run_id}.json"
+        return live_results_filename(run_id, timestamp=artifact_timestamp)
 
 
-    def _run_config_path(self, run_id: str) -> Path:
+    def _run_config_path(self, run_id: str, *, artifact_timestamp: str | None = None) -> Path:
         """
         Build local run config path.
         """
-        return self._job_config_dir() / f"{run_id}.json"
+        if artifact_timestamp is None:
+            return self._job_config_dir() / f"{run_id}.json"
+        return self._job_config_dir() / run_config_filename(run_id, timestamp=artifact_timestamp)
 
 
-    def _write_run_config(self, run_id: str, config_json: dict[str, Any]) -> Path:
+    def _write_run_config(
+        self,
+        run_id: str,
+        config_json: dict[str, Any],
+        *,
+        artifact_timestamp: str | None = None,
+    ) -> Path:
         """
         Write run config payload to JSON file.
         """
-        path = self._run_config_path(run_id)
+        path = self._run_config_path(run_id, artifact_timestamp=artifact_timestamp)
         path.write_text(json.dumps(config_json, ensure_ascii=False, indent=2), encoding="utf-8")
         return path
 
@@ -465,9 +511,19 @@ class SimulationRunService:
         """
         Cleanup local config/results/log files for a run ID.
         """
-        self._delete_file_if_exists(self._run_config_path(run_id))
-        self._delete_file_if_exists(self._results_dir() / self._build_live_results_filename(run_id))
-        self._delete_file_if_exists(self._simulation_log_path(run_id))
+        for path in self._matching_run_local_files(run_id):
+            self._delete_file_if_exists(path)
+
+
+    def _matching_run_local_files(self, run_id: str) -> list[Path]:
+        return [
+            *self._job_config_dir().glob(f"{run_id}*.json"),
+            *self._job_config_dir().glob(f"*_{run_id}.json"),
+            *self._results_dir().glob(f"live_results_{run_id}*.json"),
+            *self._results_dir().glob(f"*_{run_id}_live_results.json"),
+            *self._runtime_log_dir().glob(f"{run_id}*_server.log"),
+            *self._runtime_log_dir().glob(f"*_{run_id}_server.log"),
+        ]
 
 
     @staticmethod

@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core import exceptions
 from app.models.simulation import SimulationRun, SimulationRunStatus
 from app.repositories.simulation import SimulationRunRepository
+from app.services.run_artifacts import legacy_live_results_filename, live_results_filename, run_artifact_timestamp
 
 TRAINING_RESULT_ARTIFACT = "training_result"
 TERMINAL_RUN_STATUSES = {
@@ -43,11 +44,11 @@ class SimulationRunMetricsService:
         if not run:
             raise exceptions.RunNotFound("Run not found")
 
-        live_result_path = self._results_dir() / self._build_live_results_filename(run_id)
-        loaded = self._load_metrics_file(live_result_path)
-        if loaded is not None:
-            await self._persist_run_metrics_if_changed(run, loaded)
-            return loaded
+        for live_result_path in self._live_result_candidates_for_run(run):
+            loaded = self._load_metrics_file(live_result_path)
+            if loaded is not None:
+                await self._persist_run_metrics_if_changed(run, loaded)
+                return loaded
 
         results = await self.run_repository.list_results(run_id)
         training_results = [result for result in results if result.artifact_type == TRAINING_RESULT_ARTIFACT]
@@ -156,11 +157,32 @@ class SimulationRunMetricsService:
         return path
 
 
-    def _build_live_results_filename(self, run_id: str) -> str:
+    def _build_live_results_filename(
+        self,
+        run_id: str,
+        *,
+        artifact_timestamp: str | None = None,
+    ) -> str:
         """
         Build live result filename for one run ID.
         """
-        return f"live_results_{run_id}.json"
+        if artifact_timestamp is None:
+            return f"live_results_{run_id}.json"
+        return live_results_filename(run_id, timestamp=artifact_timestamp)
+
+
+    def _live_result_candidates_for_run(self, run: SimulationRun) -> list[Path]:
+        directory = self._results_dir()
+        timestamped = directory / self._build_live_results_filename(
+            run.id,
+            artifact_timestamp=run_artifact_timestamp(run.created_at),
+        )
+        legacy_timestamped = directory / legacy_live_results_filename(
+            run.id,
+            timestamp=run_artifact_timestamp(run.created_at),
+        )
+        legacy = directory / self._build_live_results_filename(run.id)
+        return list(dict.fromkeys([timestamped, legacy_timestamped, legacy]))
 
 
     def _load_metrics_file(self, file_path: Path) -> dict[str, Any] | None:
@@ -188,9 +210,9 @@ class SimulationRunMetricsService:
         if not directory.exists():
             return None
 
-        expected = directory / self._build_live_results_filename(run.id)
-        if expected.exists() and expected.is_file():
-            return expected
+        for expected in self._live_result_candidates_for_run(run):
+            if expected.exists() and expected.is_file():
+                return expected
 
         started_at = run.started_at or run.created_at
         if started_at is None:
@@ -198,13 +220,14 @@ class SimulationRunMetricsService:
 
         start_ts = started_at.timestamp()
         candidates: list[Path] = []
-        for path in directory.glob("live_results_*.json"):
-            try:
-                mtime = path.stat().st_mtime
-            except OSError:
-                continue
-            if mtime >= start_ts - 5:
-                candidates.append(path)
+        for pattern in ("*_live_results.json", "live_results_*.json"):
+            for path in directory.glob(pattern):
+                try:
+                    mtime = path.stat().st_mtime
+                except OSError:
+                    continue
+                if mtime >= start_ts - 5:
+                    candidates.append(path)
 
         if not candidates:
             return None

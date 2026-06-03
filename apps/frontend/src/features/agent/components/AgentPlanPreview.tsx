@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ClipboardList, MessageSquare, Play, Sparkles, Target } from "lucide-react";
 import { toast } from "sonner";
 
@@ -23,6 +23,7 @@ import {
   collectAgentSchemaFields,
   fieldCompatibilityHint,
   formatFieldValue,
+  inferSftSettingsForDatasetPath,
   optionDisableReasonForConfig,
   optionDisabledForConfig,
   optionLabel,
@@ -102,6 +103,11 @@ export function AgentPlanPreview(props: AgentPageProps) {
           const currentModel = getValueByPath(fullConfig, "model.name");
           if (!isModelCompatibleWithDataset(currentModel, String(value))) {
             nextConfig = setConfigValue(nextConfig, "model.name", "Auto");
+          }
+        }
+        if (path === "sft.dataset_path") {
+          for (const [inferredPath, inferredValue] of Object.entries(inferSftSettingsForDatasetPath(value))) {
+            nextConfig = setConfigValue(nextConfig, inferredPath, inferredValue);
           }
         }
         return {
@@ -354,11 +360,13 @@ function SchemaFieldControl({
   value: unknown;
   onChange: (value: unknown) => void;
 }) {
-  const datalistId = useId();
   const compatibilityHint = fieldCompatibilityHint(field.path, config);
   const boolDisabled = disabled || booleanDisabledForConfig(field.path, value, config);
   const boolReason = booleanDisableReasonForConfig(field.path, value, config);
   const textOptions = field.options.map((option) => String(option));
+  const textValue = formatFieldValue(value);
+  const selectedTextOption = textOptions.includes(textValue) ? textValue : "";
+  const customTextOption = textValue !== "-" && selectedTextOption === "" ? textValue : null;
 
   return (
     <div className="space-y-1 rounded-md border border-border/70 bg-background/60 p-2">
@@ -411,22 +419,49 @@ function SchemaFieldControl({
         </div>
       )}
       {field.type !== "select" && field.type !== "number" && field.type !== "bool" && (
-        <>
+        textOptions.length > 0 ? (
+          <Select value={customTextOption ?? selectedTextOption} onValueChange={onChange} disabled={disabled}>
+            <SelectTrigger
+              className="font-mono overflow-hidden [&>span]:block [&>span]:truncate [&>span]:whitespace-nowrap"
+              title={textValue}
+            >
+              <SelectValue placeholder="Choose option" />
+            </SelectTrigger>
+            <SelectContent className="max-w-[min(36rem,calc(100vw-2rem))]">
+              {customTextOption && (
+                <SelectItem
+                  value={customTextOption}
+                  className="font-mono"
+                  title={customTextOption}
+                >
+                  <span className="block max-w-full truncate">{customTextOption}</span>
+                </SelectItem>
+              )}
+              {field.options.map((option) => {
+                const itemDisabled = optionDisabledForConfig(field.definition, option, field.path, config);
+                const label = optionLabel(field.definition, option);
+                return (
+                  <SelectItem
+                    key={`${field.path}-text-option-${String(option)}`}
+                    value={String(option)}
+                    disabled={itemDisabled}
+                    className="font-mono"
+                    title={String(option)}
+                  >
+                    <span className="block max-w-full truncate">{label}</span>
+                  </SelectItem>
+                );
+              })}
+            </SelectContent>
+          </Select>
+        ) : (
           <Input
             className="font-mono"
             disabled={disabled}
-            list={textOptions.length > 0 ? datalistId : undefined}
-            value={formatFieldValue(value)}
+            value={textValue}
             onChange={(event) => onChange(event.target.value)}
           />
-          {textOptions.length > 0 && (
-            <datalist id={datalistId}>
-              {textOptions.map((option) => (
-                <option key={`${field.path}-${option}`} value={option} />
-              ))}
-            </datalist>
-          )}
-        </>
+        )
       )}
       {compatibilityHint && <p className="text-[11px] text-muted-foreground">{compatibilityHint}</p>}
       {boolReason && <p className="text-[11px] text-muted-foreground">{boolReason}</p>}

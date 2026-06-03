@@ -11,7 +11,7 @@ LLM_DATASET_ROOT = Path("datasets") / "llm"
 DEFAULT_LLM_BASE_MODEL = "Qwen/Qwen2.5-0.5B-Instruct"
 DEFAULT_LLM_DATASET_PATH = "./datasets/llm/train.jsonl"
 DEFAULT_LLM_EVALUATION_DATASET_PATH = "./datasets/llm/validation.jsonl"
-SFT_DATASET_SUFFIXES = {".jsonl"}
+SFT_DATASET_SUFFIXES = {".jsonl", ".parquet"}
 
 
 def discover_llm_model_options(project_root: Path) -> list[str]:
@@ -26,7 +26,7 @@ def discover_llm_model_options(project_root: Path) -> list[str]:
             candidates.append(child)
 
     for config_file in root.rglob("config.json"):
-        model_dir = config_file.parent
+        model_dir = _model_option_dir_for_config(config_file, root)
         if model_dir.is_dir() and _is_visible_relative(model_dir, project_root):
             candidates.append(model_dir)
 
@@ -34,55 +34,91 @@ def discover_llm_model_options(project_root: Path) -> list[str]:
 
 
 def discover_llm_dataset_options(project_root: Path) -> list[str]:
-    """Return local SFT JSONL files under datasets/llm as schema option values."""
+    """Return local SFT files and dataset directories under datasets/llm."""
     root = project_root / LLM_DATASET_ROOT
     if not root.exists() or not root.is_dir():
         return []
 
-    candidates = [
-        path
-        for path in root.rglob("*")
-        if path.is_file()
-        and path.suffix.lower() in SFT_DATASET_SUFFIXES
-        and _is_visible_relative(path, project_root)
-    ]
+    candidates: list[Path] = []
+    for path in root.rglob("*"):
+        if (
+            not path.is_file()
+            or path.suffix.lower() not in SFT_DATASET_SUFFIXES
+            or not _is_visible_relative(path, project_root)
+        ):
+            continue
+        candidates.append(path)
+        if path.suffix.lower() == ".parquet":
+            dataset_dir = _dataset_option_dir_for_parquet(path, root)
+            if dataset_dir is not None and _is_visible_relative(dataset_dir, project_root):
+                candidates.append(dataset_dir)
     return _unique_sorted_relative_options(candidates, project_root)
+
+
+def get_llm_resource_options(project_root: Path) -> dict[str, Any]:
+    """Return dynamic local LLM resource options for API and schema callers."""
+    dataset_options = discover_llm_dataset_options(project_root)
+    return {
+        "models": _merge_options(
+            [DEFAULT_LLM_BASE_MODEL],
+            discover_llm_model_options(project_root),
+        ),
+        "datasets": _merge_options([DEFAULT_LLM_DATASET_PATH], dataset_options),
+        "evaluation_datasets": _merge_options(
+            [DEFAULT_LLM_EVALUATION_DATASET_PATH],
+            dataset_options,
+        ),
+        "default_model": DEFAULT_LLM_BASE_MODEL,
+    }
 
 
 def augment_config_schema_with_llm_resources(schema: dict[str, Any], project_root: Path) -> dict[str, Any]:
     """Inject discovered local LLM resource options into the mutable config schema."""
-    model_options = _merge_options(
-        [DEFAULT_LLM_BASE_MODEL],
-        discover_llm_model_options(project_root),
-    )
-    dataset_options = _merge_options(
-        [DEFAULT_LLM_DATASET_PATH],
-        discover_llm_dataset_options(project_root),
-    )
-    evaluation_dataset_options = _merge_options(
-        [DEFAULT_LLM_EVALUATION_DATASET_PATH],
-        discover_llm_dataset_options(project_root),
-    )
+    resources = get_llm_resource_options(project_root)
 
     _set_field_options(
         schema,
         ("llm", "base_model"),
-        model_options,
+        resources["models"],
         source_dir=f"./{LLM_MODEL_ROOT.as_posix()}",
     )
     _set_field_options(
         schema,
         ("sft", "dataset_path"),
-        dataset_options,
+        resources["datasets"],
         source_dir=f"./{LLM_DATASET_ROOT.as_posix()}",
     )
     _set_field_options(
         schema,
         ("evaluation", "dataset_path"),
-        evaluation_dataset_options,
+        resources["evaluation_datasets"],
         source_dir=f"./{LLM_DATASET_ROOT.as_posix()}",
     )
     return schema
+
+
+def _model_option_dir_for_config(config_file: Path, model_root: Path) -> Path:
+    try:
+        relative = config_file.relative_to(model_root)
+    except ValueError:
+        return config_file.parent
+
+    parts = relative.parts
+    if "snapshots" in parts:
+        snapshot_index = parts.index("snapshots")
+        if snapshot_index > 0:
+            return model_root.joinpath(*parts[:snapshot_index])
+    return config_file.parent
+
+
+def _dataset_option_dir_for_parquet(path: Path, dataset_root: Path) -> Path | None:
+    try:
+        relative = path.relative_to(dataset_root)
+    except ValueError:
+        return None
+    if len(relative.parts) <= 1:
+        return None
+    return dataset_root / relative.parts[0]
 
 
 def _set_field_options(

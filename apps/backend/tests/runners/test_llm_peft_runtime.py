@@ -66,6 +66,8 @@ def test_llm_peft_runtime_writes_blocked_metrics_for_missing_dependencies(tmp_pa
     metrics_path = tmp_path / "results" / "live_results_test.json"
     metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
     assert metrics["llm_dataset"]["num_records"] == 2
+    assert metrics["llm_dataset"]["format"] == "prompt_completion"
+    assert metrics["llm_dataset"]["file_format"] == "jsonl"
     assert metrics["llm_dataset"]["client_record_counts"] == [1, 1]
     assert metrics["llm_runtime"]["reason"] == "missing_llm_runtime_dependencies"
     assert metrics["llm_runtime"]["missing_dependencies"] == ["transformers", "peft"]

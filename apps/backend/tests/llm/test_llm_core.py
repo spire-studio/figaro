@@ -20,7 +20,7 @@ from fl_core.llm.artifacts import (
     sha256_file,
 )
 from fl_core.llm.config import normalize_llm_peft_config, parse_target_modules
-from fl_core.llm.data import SftRecord, format_sft_record_text, load_jsonl_sft_records, split_records_by_client
+from fl_core.llm.data import SftRecord, format_sft_record_text, load_jsonl_sft_records, load_sft_records, split_records_by_client
 from fl_core.llm.metrics import append_llm_round_metrics, empty_llm_metrics_payload
 from fl_core.llm.trainer import TokenizedSftDataset
 
@@ -81,6 +81,8 @@ def test_normalize_llm_peft_config_parses_nested_sections(tmp_path):
     assert normalized.sft.dataset_path.name == "train.jsonl"
     assert normalized.sft.per_device_train_batch_size == 1
     assert normalized.sft.gradient_accumulation_steps == 1
+    assert normalized.sft.file_format == "auto"
+    assert normalized.sft.validation_split == 0.0
     assert normalized.peft.target_modules == ("q_proj", "v_proj")
     assert normalized.peft.resume_adapter_path == resume_path
     assert normalized.federated.num_clients == 2
@@ -140,6 +142,56 @@ def test_load_jsonl_sft_records_messages_format(tmp_path):
 
     assert record.messages[0]["role"] == "user"
     assert "<|im_start|>user" in format_sft_record_text(record, data_format="messages", prompt_template="chatml")
+
+
+def test_load_sft_records_jsonl_still_works(tmp_path):
+    dataset_path = tmp_path / "train.jsonl"
+    dataset_path.write_text(json.dumps({"prompt": "Q", "completion": "A"}), encoding="utf-8")
+
+    [record] = load_sft_records(dataset_path, data_format="prompt_completion", file_format="auto")
+
+    assert record.prompt == "Q"
+    assert record.completion == "A"
+
+
+def test_load_alpaca_parquet_sft_records(tmp_path):
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    dataset_dir = tmp_path / "alpaca"
+    data_dir = dataset_dir / "data"
+    data_dir.mkdir(parents=True)
+    parquet_path = data_dir / "train-00000-of-00001-a09b74b3ef9c3b56.parquet"
+    table = pa.Table.from_pylist(
+        [
+            {
+                "instruction": "Summarize the note",
+                "input": "The run finished with lower loss.",
+                "output": "The run improved loss.",
+            },
+            {
+                "instruction": "Say hello",
+                "input": "",
+                "output": "Hello.",
+            },
+        ]
+    )
+    pq.write_table(table, parquet_path)
+
+    records = load_sft_records(dataset_dir, data_format="alpaca", file_format="auto")
+
+    assert len(records) == 2
+    assert records[0].prompt == (
+        "Instruction: Summarize the note\n"
+        "Input: The run finished with lower loss.\n"
+        "Answer:"
+    )
+    assert records[0].completion == " The run improved loss."
+    assert records[1].prompt == "Instruction: Say hello\nAnswer:"
+    assert records[1].completion == " Hello."
+    assert format_sft_record_text(records[0], data_format="alpaca", prompt_template="plain").endswith(
+        " The run improved loss."
+    )
 
 
 def test_aggregate_adapter_state_dicts_weighted_by_examples():
@@ -231,5 +283,5 @@ def test_tokenized_sft_dataset_uses_rendered_text():
 
     item = dataset[0]
     assert item["input_ids"] == [97, 98, 99, 100]
-    assert item["labels"] == item["input_ids"]
+    assert item["labels"] == [-100, -100, -100, 100]
     assert dataset.num_tokens == 4

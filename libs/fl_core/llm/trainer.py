@@ -142,8 +142,9 @@ class LlmPeftTrainer:
             gradient_accumulation_steps=self.config.sft.gradient_accumulation_steps,
             num_train_epochs=self.config.federated.local_epochs,
             learning_rate=self.config.federated.learning_rate,
-            logging_steps=1,
+            logging_strategy="no",
             save_strategy="no",
+            disable_tqdm=True,
             report_to=[],
             remove_unused_columns=False,
             fp16=self.config.llm.precision == "fp16" and torch.cuda.is_available(),
@@ -200,6 +201,7 @@ class LlmPeftTrainer:
         training_args = transformers.TrainingArguments(
             output_dir=str(eval_output_dir),
             per_device_eval_batch_size=self.config.evaluation.batch_size,
+            disable_tqdm=True,
             report_to=[],
             remove_unused_columns=False,
             fp16=self.config.llm.precision == "fp16" and torch.cuda.is_available(),
@@ -221,13 +223,15 @@ class LlmPeftTrainer:
 
     def _transformers_module(self) -> Any:
         with _without_project_root_on_sys_path():
-            return __import__("transformers", fromlist=[
+            transformers = __import__("transformers", fromlist=[
                 "AutoModelForCausalLM",
                 "AutoTokenizer",
                 "DataCollatorForLanguageModeling",
                 "Trainer",
                 "TrainingArguments",
             ])
+        _quiet_transformers(transformers)
+        return transformers
 
     def _peft_module(self) -> Any:
         return __import__("peft", fromlist=[
@@ -286,7 +290,7 @@ class LlmPeftTrainer:
         kwargs: dict[str, Any] = {}
         dtype = self._torch_dtype()
         if dtype is not None:
-            kwargs["torch_dtype"] = dtype
+            kwargs["dtype"] = dtype
 
         if torch.cuda.is_available():
             kwargs["device_map"] = "auto"
@@ -326,6 +330,20 @@ def _extract_train_loss(train_output: Any) -> float:
     return 0.0
 
 
+def _quiet_transformers(transformers: Any) -> None:
+    logging_module = getattr(transformers, "logging", None)
+    if logging_module is None:
+        return
+
+    disable_progress_bar = getattr(logging_module, "disable_progress_bar", None)
+    if callable(disable_progress_bar):
+        disable_progress_bar()
+
+    set_verbosity_error = getattr(logging_module, "set_verbosity_error", None)
+    if callable(set_verbosity_error):
+        set_verbosity_error()
+
+
 def _tokenize_text(
     tokenizer: Any,
     text: str,
@@ -356,7 +374,7 @@ def _labels_for_record(
     max_seq_length: int,
 ) -> list[int]:
     labels = list(input_ids)
-    if data_format != "prompt_completion":
+    if data_format not in {"prompt_completion", "alpaca"}:
         return labels
 
     prompt_text = record.prompt or ""

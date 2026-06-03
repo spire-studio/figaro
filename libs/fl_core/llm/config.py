@@ -20,6 +20,8 @@ class LlmModelConfig:
 class SftDatasetConfig:
     dataset_path: Path
     format: str
+    file_format: str
+    validation_split: float
     prompt_template: str
     per_device_train_batch_size: int
     gradient_accumulation_steps: int
@@ -103,7 +105,18 @@ def normalize_llm_peft_config(config: Mapping[str, Any]) -> LlmPeftRuntimeConfig
     )
     sft = SftDatasetConfig(
         dataset_path=Path(_text(sft_cfg.get("dataset_path"), "sft.dataset_path")),
-        format=_choice(sft_cfg.get("format", "prompt_completion"), {"prompt_completion", "messages"}, "sft.format"),
+        format=_choice(
+            sft_cfg.get("format", "prompt_completion"),
+            {"prompt_completion", "messages", "alpaca"},
+            "sft.format",
+        ),
+        file_format=_choice(sft_cfg.get("file_format", "auto"), {"auto", "jsonl", "parquet"}, "sft.file_format"),
+        validation_split=_bounded_float(
+            sft_cfg.get("validation_split", 0.0),
+            "sft.validation_split",
+            minimum=0.0,
+            maximum=0.5,
+        ),
         prompt_template=_choice(sft_cfg.get("prompt_template", "plain"), {"plain", "chatml"}, "sft.prompt_template"),
         per_device_train_batch_size=_positive_int(
             sft_cfg.get("per_device_train_batch_size", 1),

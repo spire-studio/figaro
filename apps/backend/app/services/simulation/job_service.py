@@ -353,6 +353,12 @@ class SimulationJobService:
             self._project_root() / "config" / "runs" / f"{run_id}.json",
             self._project_root() / "results" / f"live_results_{run_id}.json",
         ]
+        candidates.extend((self._project_root() / "configs" / "simulation_runs").glob(f"{run_id}*.json"))
+        candidates.extend((self._project_root() / "configs" / "simulation_runs").glob(f"*_{run_id}.json"))
+        candidates.extend((self._project_root() / "results").glob(f"live_results_{run_id}*.json"))
+        candidates.extend((self._project_root() / "results").glob(f"*_{run_id}_live_results.json"))
+        candidates.extend((self._project_root() / "logs" / "simulation_runs").glob(f"{run_id}*_server.log"))
+        candidates.extend((self._project_root() / "logs" / "simulation_runs").glob(f"*_{run_id}_server.log"))
         for path in candidates:
             try:
                 if path.exists() and path.is_file():

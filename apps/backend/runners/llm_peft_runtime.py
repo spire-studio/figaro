@@ -20,7 +20,7 @@ if str(FL_CORE_PARENT) not in sys.path:
     sys.path.insert(0, str(FL_CORE_PARENT))
 
 from fl_core.llm.config import LlmPeftRuntimeConfig, normalize_llm_peft_config
-from fl_core.llm.data import load_jsonl_sft_records, split_records_by_client
+from fl_core.llm.data import load_sft_records, split_records_by_client
 from fl_core.llm.aggregation import aggregate_adapter_state_dicts
 from fl_core.llm.artifacts import (
     adapter_artifact_record,
@@ -58,9 +58,14 @@ def run_llm_peft_runtime(config_path: Path) -> bool:
         print(f"PEFT_ADAPTER: method={runtime_config.peft.method} rank={runtime_config.peft.rank}")
 
         dataset_path = _resolve_runtime_path(runtime_config.sft.dataset_path)
-        records = load_jsonl_sft_records(
+        dataset_file_format = _effective_sft_file_format(
+            dataset_path,
+            configured_file_format=runtime_config.sft.file_format,
+        )
+        records = load_sft_records(
             dataset_path,
             data_format=runtime_config.sft.format,
+            file_format=runtime_config.sft.file_format,
         )
         client_splits = split_records_by_client(
             records,
@@ -71,6 +76,7 @@ def run_llm_peft_runtime(config_path: Path) -> bool:
             "num_records": len(records),
             "client_record_counts": [len(client_records) for client_records in client_splits],
             "format": runtime_config.sft.format,
+            "file_format": dataset_file_format,
             "prompt_template": runtime_config.sft.prompt_template,
             "path": str(dataset_path),
         }
@@ -79,13 +85,19 @@ def run_llm_peft_runtime(config_path: Path) -> bool:
             if runtime_config.evaluation.dataset_path is None:
                 raise ValueError("evaluation.dataset_path must be set when evaluation.enable is true")
             evaluation_path = _resolve_runtime_path(runtime_config.evaluation.dataset_path)
-            evaluation_records = load_jsonl_sft_records(
+            evaluation_file_format = _effective_sft_file_format(
+                evaluation_path,
+                configured_file_format=runtime_config.sft.file_format,
+            )
+            evaluation_records = load_sft_records(
                 evaluation_path,
                 data_format=runtime_config.sft.format,
+                file_format=runtime_config.sft.file_format,
             )[: runtime_config.evaluation.max_samples]
             metrics["llm_evaluation"] = {
                 "enabled": True,
                 "path": str(evaluation_path),
+                "file_format": evaluation_file_format,
                 "num_records": len(evaluation_records),
                 "batch_size": runtime_config.evaluation.batch_size,
                 "max_samples": runtime_config.evaluation.max_samples,
@@ -144,6 +156,10 @@ def run_llm_peft_runtime(config_path: Path) -> bool:
             print(f"LLM_PEFT_ROUND_START: round={round_num} clients={selected_ids}")
             updates = []
             for client_id in selected_ids:
+                print(
+                    "LLM_PEFT_CLIENT_START: "
+                    f"round={round_num} client={client_id} records={len(client_splits[client_id])}"
+                )
                 update = trainer.train_client(
                     client_id=client_id,
                     records=client_splits[client_id],
@@ -153,6 +169,12 @@ def run_llm_peft_runtime(config_path: Path) -> bool:
                 )
                 updates.append(update)
                 _append_client_metrics(metrics, client_id=client_id, update=update)
+                print(
+                    "LLM_PEFT_CLIENT_DONE: "
+                    f"round={round_num} client={client_id} "
+                    f"train_loss={float(update.metrics.get('train_loss', 0.0)):.6f} "
+                    f"records={update.num_examples} tokens={update.num_tokens}"
+                )
 
             global_adapter_state = aggregate_adapter_state_dicts(
                 updates,
@@ -269,6 +291,35 @@ def _adapter_dir(config: LlmPeftRuntimeConfig) -> Path:
 
 def _resolve_runtime_path(path: Path) -> Path:
     return path if path.is_absolute() else PROJECT_ROOT / path
+
+
+def _effective_sft_file_format(path: Path, *, configured_file_format: str) -> str:
+    if configured_file_format != "auto":
+        return configured_file_format
+    if path.is_file():
+        detected = _sft_file_format_from_suffix(path)
+        return detected or "auto"
+    if path.is_dir():
+        formats = {
+            detected
+            for candidate in path.rglob("*")
+            if candidate.is_file()
+            and (detected := _sft_file_format_from_suffix(candidate)) is not None
+        }
+        if len(formats) == 1:
+            return next(iter(formats))
+        if len(formats) > 1:
+            return "mixed"
+    return "auto"
+
+
+def _sft_file_format_from_suffix(path: Path) -> str | None:
+    suffix = path.suffix.lower()
+    if suffix == ".jsonl":
+        return "jsonl"
+    if suffix == ".parquet":
+        return "parquet"
+    return None
 
 
 def _run_artifact_id() -> str:

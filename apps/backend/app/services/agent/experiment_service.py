@@ -33,6 +33,13 @@ from app.models.agent import (
 )
 from app.repositories.agent import AgentExperimentRepository
 from app.services.llm_resources import augment_config_schema_with_llm_resources
+from app.services.run_artifacts import (
+    legacy_live_results_filename,
+    live_results_filename,
+    run_artifact_timestamp,
+    run_config_filename,
+    run_log_filename,
+)
 from app.services.simulation.compatibility import canonicalize_runtime_config, validate_runtime_config_or_raise
 
 from app.core.logger import get_logger
@@ -314,6 +321,12 @@ class AgentExperimentService:
             self._project_root() / "configs" / "agent_experiment_runs" / f"{run_id}.json",
             self._project_root() / "results" / f"live_results_{run_id}.json",
         ]
+        candidates.extend((self._project_root() / "configs" / "agent_experiment_runs").glob(f"{run_id}*.json"))
+        candidates.extend((self._project_root() / "configs" / "agent_experiment_runs").glob(f"*_{run_id}.json"))
+        candidates.extend((self._project_root() / "results").glob(f"live_results_{run_id}*.json"))
+        candidates.extend((self._project_root() / "results").glob(f"*_{run_id}_live_results.json"))
+        candidates.extend((self._project_root() / "logs" / "agent_experiment_runs").glob(f"{run_id}*_server.log"))
+        candidates.extend((self._project_root() / "logs" / "agent_experiment_runs").glob(f"*_{run_id}_server.log"))
         for path in candidates:
             try:
                 if path.exists() and path.is_file():
@@ -481,11 +494,11 @@ class AgentExperimentRunService:
         if not run:
             raise exceptions.RunNotFound("Run not found")
         # Try live result file
-        live_result_path = self._results_dir() / self._build_live_results_filename(run_id)
-        loaded = self._load_metrics_file(live_result_path)
-        if loaded is not None:
-            await self._persist_run_metrics_if_changed(run, loaded)
-            return loaded
+        for live_result_path in self._live_result_candidates_for_run(run):
+            loaded = self._load_metrics_file(live_result_path)
+            if loaded is not None:
+                await self._persist_run_metrics_if_changed(run, loaded)
+                return loaded
 
         # Try result artifacts
         results = await self.repo.list_results(run_id)
@@ -534,18 +547,22 @@ class AgentExperimentRunService:
         )
         await self.repo.create_run(run)
 
-        config_path = self._write_run_config(run.id, config_json)
+        artifact_timestamp = run_artifact_timestamp(run.created_at)
+        config_path = self._write_run_config(run.id, config_json, artifact_timestamp=artifact_timestamp)
         await self.repo.add_result(
             run_id=run.id,
             artifact_type=RUN_CONFIG_ARTIFACT,
             path=str(config_path),
-            metadata_json={"source": "run_config"},
+            metadata_json={"source": "run_config", "artifact_timestamp": artifact_timestamp},
         )
 
         command = self._build_train_command(config_path)
         run.command = " ".join(command)
 
-        live_results_path = self._results_dir() / self._build_live_results_filename(run.id)
+        live_results_path = self._results_dir() / self._build_live_results_filename(
+            run.id,
+            artifact_timestamp=artifact_timestamp,
+        )
         child_env = self._build_run_environment(live_results_path)
         process = await self._spawn_subprocess(command, env=child_env)
 
@@ -560,13 +577,21 @@ class AgentExperimentRunService:
         await self.session.refresh(run)
 
         self._processes[run.id] = process
-        self._tasks[run.id] = asyncio.create_task(self._watch_process(run.id, process))
+        self._tasks[run.id] = asyncio.create_task(
+            self._watch_process(run.id, process, artifact_timestamp=artifact_timestamp)
+        )
         return run
 
-    async def _watch_process(self, run_id: str, process: asyncio.subprocess.Process) -> None:
+    async def _watch_process(
+        self,
+        run_id: str,
+        process: asyncio.subprocess.Process,
+        *,
+        artifact_timestamp: str | None = None,
+    ) -> None:
         """Consume subprocess streams and persist final run status/artifacts."""
         result_path: str | None = None
-        log_path = self._run_log_path(run_id)
+        log_path = self._run_log_path(run_id, artifact_timestamp=artifact_timestamp)
 
         async def consume(stream: asyncio.StreamReader, level: str, prefix: str) -> None:
             nonlocal result_path
@@ -578,7 +603,7 @@ class AgentExperimentRunService:
                     message = line.decode("utf-8", errors="replace").rstrip()
                     if not message:
                         continue
-                    file_obj.write(f"[{prefix}] {message}\\n")
+                    file_obj.write(f"[{prefix}] {message}\n")
                     file_obj.flush()
 
                     match = RESULT_PATH_PATTERN.search(message)
@@ -619,7 +644,10 @@ class AgentExperimentRunService:
                         run_id=run_id,
                         artifact_type=TRAINING_RESULT_ARTIFACT,
                         path=result_path,
-                        metadata_json={"source": "process_output"},
+                        metadata_json={
+                            "source": "process_output",
+                            "artifact_timestamp": artifact_timestamp,
+                        },
                     )
                     resolved = self._resolve_result_artifact_path(result_path)
                     normalized = self._load_metrics_file(resolved)
@@ -634,7 +662,10 @@ class AgentExperimentRunService:
                             run_id=run_id,
                             artifact_type=TRAINING_RESULT_ARTIFACT,
                             path=str(guessed),
-                            metadata_json={"source": "live_results_fallback"},
+                            metadata_json={
+                                "source": "live_results_fallback",
+                                "artifact_timestamp": artifact_timestamp,
+                            },
                         )
                         normalized = self._load_metrics_file(guessed)
                         if normalized is not None:
@@ -665,17 +696,33 @@ class AgentExperimentRunService:
         path.mkdir(parents=True, exist_ok=True)
         return path
 
-    def _run_log_path(self, run_id: str) -> Path:
-        return self._runtime_log_dir() / f"{run_id}_server.log"
+    def _run_log_path(self, run_id: str, *, artifact_timestamp: str | None = None) -> Path:
+        if artifact_timestamp is None:
+            return self._runtime_log_dir() / f"{run_id}_server.log"
+        return self._runtime_log_dir() / run_log_filename(
+            run_id,
+            timestamp=artifact_timestamp,
+            role="server",
+        )
 
-    def _build_live_results_filename(self, run_id: str) -> str:
-        return f"live_results_{run_id}.json"
+    def _build_live_results_filename(self, run_id: str, *, artifact_timestamp: str | None = None) -> str:
+        if artifact_timestamp is None:
+            return f"live_results_{run_id}.json"
+        return live_results_filename(run_id, timestamp=artifact_timestamp)
 
-    def _run_config_path(self, run_id: str) -> Path:
-        return self._job_config_dir() / f"{run_id}.json"
+    def _run_config_path(self, run_id: str, *, artifact_timestamp: str | None = None) -> Path:
+        if artifact_timestamp is None:
+            return self._job_config_dir() / f"{run_id}.json"
+        return self._job_config_dir() / run_config_filename(run_id, timestamp=artifact_timestamp)
 
-    def _write_run_config(self, run_id: str, config_json: dict[str, Any]) -> Path:
-        path = self._run_config_path(run_id)
+    def _write_run_config(
+        self,
+        run_id: str,
+        config_json: dict[str, Any],
+        *,
+        artifact_timestamp: str | None = None,
+    ) -> Path:
+        path = self._run_config_path(run_id, artifact_timestamp=artifact_timestamp)
         path.write_text(json.dumps(config_json, ensure_ascii=False, indent=2), encoding="utf-8")
         return path
 
@@ -725,16 +772,22 @@ class AgentExperimentRunService:
         return AgentExperimentRunStatus.SUCCEEDED if exit_code == 0 else AgentExperimentRunStatus.FAILED
 
     def _cleanup_run_local_files(self, run_id: str) -> None:
-        for path in [
-            self._run_config_path(run_id),
-            self._results_dir() / self._build_live_results_filename(run_id),
-            self._run_log_path(run_id),
-        ]:
+        for path in self._matching_run_local_files(run_id):
             try:
                 if path.exists() and path.is_file():
                     path.unlink()
             except OSError:
                 continue
+
+    def _matching_run_local_files(self, run_id: str) -> list[Path]:
+        return [
+            *self._job_config_dir().glob(f"{run_id}*.json"),
+            *self._job_config_dir().glob(f"*_{run_id}.json"),
+            *self._results_dir().glob(f"live_results_{run_id}*.json"),
+            *self._results_dir().glob(f"*_{run_id}_live_results.json"),
+            *self._runtime_log_dir().glob(f"{run_id}*_server.log"),
+            *self._runtime_log_dir().glob(f"*_{run_id}_server.log"),
+        ]
 
     # -- metrics helpers (mirrored from SimulationRunMetricsService) ------
 
@@ -787,26 +840,40 @@ class AgentExperimentRunService:
         directory = self._results_dir()
         if not directory.exists():
             return None
-        expected = directory / self._build_live_results_filename(run.id)
-        if expected.exists() and expected.is_file():
-            return expected
+        for expected in self._live_result_candidates_for_run(run):
+            if expected.exists() and expected.is_file():
+                return expected
 
         started_at = run.started_at or run.created_at
         if started_at is None:
             return None
         start_ts = started_at.timestamp()
         candidates: list[Path] = []
-        for path in directory.glob("live_results_*.json"):
-            try:
-                mtime = path.stat().st_mtime
-            except OSError:
-                continue
-            if mtime >= start_ts - 5:
-                candidates.append(path)
+        for pattern in ("*_live_results.json", "live_results_*.json"):
+            for path in directory.glob(pattern):
+                try:
+                    mtime = path.stat().st_mtime
+                except OSError:
+                    continue
+                if mtime >= start_ts - 5:
+                    candidates.append(path)
         if not candidates:
             return None
         candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
         return candidates[0]
+
+    def _live_result_candidates_for_run(self, run: AgentExperimentRun) -> list[Path]:
+        directory = self._results_dir()
+        timestamped = directory / self._build_live_results_filename(
+            run.id,
+            artifact_timestamp=run_artifact_timestamp(run.created_at),
+        )
+        legacy_timestamped = directory / legacy_live_results_filename(
+            run.id,
+            timestamp=run_artifact_timestamp(run.created_at),
+        )
+        legacy = directory / self._build_live_results_filename(run.id)
+        return list(dict.fromkeys([timestamped, legacy_timestamped, legacy]))
 
     def _normalize_metrics_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         normalized = self._empty_metrics_payload()

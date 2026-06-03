@@ -14,7 +14,7 @@ import {
 import type { AgentPageProps, AgentWorkflowStep, AgentPlanDraft } from "../../pages/types";
 import { latestLlmLoss } from "../simulation/llm-metrics";
 import { toErrorMessage } from "../simulation/utils";
-import { removeValueByPath, setConfigValue } from "./schema";
+import { inferSftSettingsForDatasetPath, removeValueByPath, setConfigValue } from "./schema";
 
 const DEFAULT_GOAL = "Compare non-IID alpha=0.1, 0.3, 0.5 on the selected dataset";
 const POLL_INTERVAL_MS = 1500;
@@ -129,6 +129,17 @@ export function useAgentController(): AgentPageProps {
   async function refreshExperiments(): Promise<void> {
     const list = await agentApi.listExperiments();
     setExperiments(list);
+  }
+
+  async function refreshLlmResources(): Promise<void> {
+    const [models, schema] = await Promise.all([
+      agentApi.listModels(),
+      agentApi.getConfigSchema(),
+    ]);
+
+    setModelOptions(models.models);
+    setDefaultModelName(models.default_model);
+    setConfigSchema(schema);
   }
 
   async function selectExperiment(experimentId: number): Promise<void> {
@@ -296,35 +307,11 @@ export function useAgentController(): AgentPageProps {
 
   useEffect(() => {
     let cancelled = false;
-    const loadModelOptions = async () => {
-      try {
-        const response = await agentApi.listModels();
-        if (cancelled) {
-          return;
-        }
-        setModelOptions(response.models);
-        setDefaultModelName(response.default_model);
-      } catch (error) {
-        if (cancelled) {
-          return;
-        }
-        toast.error(toErrorMessage(error), { id: "agent-models" });
+    void refreshLlmResources().catch((error: unknown) => {
+      if (!cancelled) {
+        toast.error(toErrorMessage(error), { id: "agent-llm-resources" });
       }
-    };
-    const loadConfigSchema = async () => {
-      try {
-        const schema = await agentApi.getConfigSchema();
-        if (!cancelled) {
-          setConfigSchema(schema);
-        }
-      } catch (error) {
-        if (!cancelled) {
-          toast.error(toErrorMessage(error), { id: "agent-config-schema" });
-        }
-      }
-    };
-    void loadModelOptions();
-    void loadConfigSchema();
+    });
     void refreshHistoryJobs().catch((error: unknown) => {
       if (!cancelled) {
         notifyError(error, "agent-history-jobs");
@@ -402,7 +389,15 @@ export function useAgentController(): AgentPageProps {
   }, [activeTaskId]);
 
   function setConfigConstraint(path: string, value: unknown): void {
-    setConfigConstraints((current) => setConfigValue(current, path, value));
+    setConfigConstraints((current) => {
+      let next = setConfigValue(current, path, value);
+      if (path === "sft.dataset_path") {
+        for (const [inferredPath, inferredValue] of Object.entries(inferSftSettingsForDatasetPath(value))) {
+          next = setConfigValue(next, inferredPath, inferredValue);
+        }
+      }
+      return next;
+    });
   }
 
   function clearConfigConstraint(path: string): void {
@@ -439,6 +434,7 @@ export function useAgentController(): AgentPageProps {
     selectExperiment,
     selectHistoryJob,
     refreshHistoryJobs,
+    refreshLlmResources,
     setConfigConstraint,
     setGoal,
     setJobName,

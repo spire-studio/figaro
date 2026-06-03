@@ -234,6 +234,25 @@ export function setConfigValue(config: Record<string, unknown>, path: string, va
   return next;
 }
 
+export function inferSftSettingsForDatasetPath(value: unknown): Record<string, string> {
+  const datasetPath = String(value ?? "").trim().toLowerCase();
+  const fileFormat = datasetPath.endsWith(".jsonl")
+    ? "jsonl"
+    : datasetPath.endsWith(".parquet")
+      ? "parquet"
+      : "auto";
+  const dataFormat = datasetPath.includes("alpaca")
+    ? "alpaca"
+    : datasetPath.includes("messages") || datasetPath.includes("chat")
+      ? "messages"
+      : "prompt_completion";
+
+  return {
+    "sft.file_format": fileFormat,
+    "sft.format": dataFormat,
+  };
+}
+
 export function validateDisabledOptions(config: Record<string, unknown>, schema: Record<string, unknown> | null): string[] {
   const errors: string[] = [];
   for (const field of collectAgentSchemaFields(schema, { featuredOnly: false })) {

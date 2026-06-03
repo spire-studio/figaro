@@ -35,6 +35,9 @@ def test_agent_config_schema_endpoint_returns_ui_metadata(client):
     assert payload["sft"]["dataset_path"]["default"] == "./datasets/llm/train.jsonl"
     assert "./datasets/llm/train.jsonl" in payload["sft"]["dataset_path"]["options"]
     assert payload["sft"]["dataset_path"]["ui"]["option_source"]["path"] == "./datasets/llm"
+    assert payload["sft"]["file_format"]["options"] == ["auto", "jsonl", "parquet"]
+    assert payload["sft"]["validation_split"]["default"] == 0.0
+    assert "alpaca" in payload["sft"]["format"]["options"]
     assert payload["evaluation"]["dataset_path"]["default"] == "./datasets/llm/validation.jsonl"
     assert "./datasets/llm/validation.jsonl" in payload["evaluation"]["dataset_path"]["options"]
     assert payload["evaluation"]["dataset_path"]["ui"]["option_source"]["path"] == "./datasets/llm"

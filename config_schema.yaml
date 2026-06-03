@@ -156,20 +156,46 @@ sft:
       label: "Dataset path"
       featured: true
       group: "LLM PEFT"
-      prompt_hint: "Path to JSONL supervised fine-tuning data under ./datasets/llm."
+      prompt_hint: "JSONL, Parquet file, or dataset directory under ./datasets/llm."
+  file_format:
+    type: "select"
+    options: ["auto", "jsonl", "parquet"]
+    default: "auto"
+    hidden: true
+    ui:
+      label: "File format"
+      group: "LLM PEFT"
+      options:
+        auto:
+          label: "Auto"
+        jsonl:
+          label: "JSONL"
+        parquet:
+          label: "Parquet"
   format:
     type: "select"
-    options: ["prompt_completion", "messages"]
+    options: ["prompt_completion", "messages", "alpaca"]
     default: "prompt_completion"
+    hidden: true
     ui:
       label: "Dataset format"
-      featured: true
       group: "LLM PEFT"
       options:
         prompt_completion:
           label: "Prompt/Completion"
         messages:
           label: "Messages"
+        alpaca:
+          label: "Alpaca"
+  validation_split:
+    type: "number"
+    default: 0.0
+    min: 0
+    max: 0.5
+    step: 0.01
+    ui:
+      label: "Validation split"
+      group: "LLM PEFT"
   prompt_template:
     type: "select"
     options: ["plain", "chatml"]
@@ -289,7 +315,7 @@ evaluation:
       label: "Validation dataset"
       featured: true
       group: "LLM PEFT"
-      prompt_hint: "Validation JSONL path under ./datasets/llm."
+      prompt_hint: "Validation JSONL, Parquet file, or dataset directory under ./datasets/llm."
   max_samples:
     type: "number"
     min: 1
