@@ -4,6 +4,7 @@ import { getHttpErrorMessage } from "./error";
 type Run = components["schemas"]["RunResponse"];
 
 export type RunClientMetricSeries = {
+  rounds?: number[];
   train_loss: number[];
   train_acc: number[];
   test_loss: number[];
@@ -21,6 +22,18 @@ export type RunMetrics = {
     global_loss: number[];
     global_accuracy: number[];
   };
+  llm_results?: {
+    rounds: number[];
+    train_loss: number[];
+    validation_loss: number[];
+    perplexity: number[];
+    token_throughput: number[];
+    adapter_size_bytes: number[];
+  };
+  llm_dataset?: Record<string, unknown>;
+  llm_evaluation?: Record<string, unknown>;
+  llm_runtime?: Record<string, unknown>;
+  llm_artifacts?: Record<string, unknown>[];
   client_results: Record<string, RunClientMetricSeries>;
 };
 

@@ -3,9 +3,21 @@ import { Activity, Bot, TerminalSquare, CheckCircle2, CircleDashed, LayoutGrid }
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../../../components/ui/card";
 import { Separator } from "../../../components/ui/separator";
 import { MiniLineChart } from "../../simulation/components/MiniLineChart";
+import { toClientSeries } from "../../simulation/utils";
 import { fmt } from "../../../lib/time";
 import type { AgentPageProps } from "../../../pages/types";
 import { baseUrl } from "../../../../src/api/client";
+import {
+  formatBytes,
+  isLlmRunMetrics,
+  llmAdapterSizeSeries,
+  llmPerplexitySeries,
+  llmRounds,
+  llmThroughputSeries,
+  llmTrainLossSeries,
+  llmValidationLossSeries,
+  latestLlmLoss,
+} from "../../simulation/llm-metrics";
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -23,11 +35,9 @@ export function AgentRunDashboard({ progress }: AgentPageProps) {
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [liveMetrics, setLiveMetrics] = useState<any>(null);
 
-  if (!progress) return null;
-
-  const currentExp = progress.current_experiment;
-  const currentPlan = progress.current_plan;
-  const experiments = progress.experiments || [];
+  const currentExp = progress?.current_experiment;
+  const currentPlan = progress?.current_plan;
+  const experiments = progress?.experiments || [];
   const activeRunId = selectedRunId 
     || currentExp?.run_id 
     || (experiments.length > 0 ? experiments[experiments.length - 1].run_id : null);
@@ -61,15 +71,19 @@ export function AgentRunDashboard({ progress }: AgentPageProps) {
     };
   }, [activeRunId]);
 
+  if (!progress) return null;
+
   const activeExpMetadata = experiments.find((e: any) => e.run_id === activeRunId) 
                          || (currentExp?.run_id === activeRunId ? currentExp : null);
 
   const metrics = liveMetrics || activeExpMetadata?.metrics || {};
+  const isLlmRun = isLlmRunMetrics(metrics);
   const globalResults = metrics.global_results || {};
-  const clientResults = metrics.client_results || {};
-  const actualDataLength = globalResults.global_accuracy?.length || 0;
+  const actualDataLength = isLlmRun
+    ? (metrics.llm_results?.rounds?.length || metrics.llm_results?.train_loss?.length || 0)
+    : (globalResults.global_accuracy?.length || 0);
 
-  const rounds = globalResults.rounds 
+  const rounds = isLlmRun ? llmRounds(metrics) : globalResults.rounds
     ? globalResults.rounds.slice(0, actualDataLength) 
     : Array.from({ length: actualDataLength }, (_, i) => i + 1);
 
@@ -87,31 +101,17 @@ export function AgentRunDashboard({ progress }: AgentPageProps) {
     values: safeSlice(globalResults.global_loss) 
   }];
 
-  const clientIds = Object.keys(clientResults);
-  
   // 3. Client Train Acc
-  const clientTrainAccSeries = clientIds.map((cId, idx) => ({
-    key: `${cId}_train_acc`, label: cId, color: CHART_COLORS[(idx + 1) % CHART_COLORS.length],
-    values: safeSlice(clientResults[cId].train_acc)
-  }));
+  const clientTrainAccSeries = toClientSeries(metrics, "train_acc", rounds);
 
   // 4. Client Train Loss
-  const clientTrainLossSeries = clientIds.map((cId, idx) => ({
-    key: `${cId}_train_loss`, label: cId, color: CHART_COLORS[(idx + 1) % CHART_COLORS.length],
-    values: safeSlice(clientResults[cId].train_loss)
-  }));
+  const clientTrainLossSeries = toClientSeries(metrics, "train_loss", rounds);
 
   // 5. Client Test Acc
-  const clientTestAccSeries = clientIds.map((cId, idx) => ({
-    key: `${cId}_test_acc`, label: cId, color: CHART_COLORS[(idx + 1) % CHART_COLORS.length],
-    values: safeSlice(clientResults[cId].test_acc)
-  }));
+  const clientTestAccSeries = toClientSeries(metrics, "test_acc", rounds);
 
   // 6. Client Test Loss
-  const clientTestLossSeries = clientIds.map((cId, idx) => ({
-    key: `${cId}_test_loss`, label: cId, color: CHART_COLORS[(idx + 1) % CHART_COLORS.length],
-    values: safeSlice(clientResults[cId].test_loss)
-  }));
+  const clientTestLossSeries = toClientSeries(metrics, "test_loss", rounds);
 
   return (
     <div className="grid h-full gap-4 xl:grid-cols-[240px_1fr_300px]">
@@ -136,7 +136,14 @@ export function AgentRunDashboard({ progress }: AgentPageProps) {
                   <span className={`font-semibold truncate ${isSelected ? 'text-primary' : 'text-foreground'}`}>
                     {`Exp ${idx + 1}`}
                   </span>
-                  {exp.score != null && <span className="text-[10px] text-muted-foreground mt-0.5">Acc: {(exp.score * 100).toFixed(2)}%</span>}
+                  {isLlmRunMetrics(exp.metrics) && latestLlmLoss(exp.metrics) !== null && (
+                    <span className="text-[10px] text-muted-foreground mt-0.5">
+                      Loss: {latestLlmLoss(exp.metrics)?.toFixed(4)}
+                    </span>
+                  )}
+                  {!isLlmRunMetrics(exp.metrics) && exp.score != null && (
+                    <span className="text-[10px] text-muted-foreground mt-0.5">Acc: {(exp.score * 100).toFixed(2)}%</span>
+                  )}
                 </div>
                 <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0 ml-2" />
               </div>
@@ -184,37 +191,51 @@ export function AgentRunDashboard({ progress }: AgentPageProps) {
           </h3>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pb-4">
-          {/* Chart 1: Global Acc */}
-          <Card className="shadow-sm"><CardContent className="p-4">
-            <MiniLineChart title="Global Accuracy" xValues={rounds} series={globalAccSeries} formatter={(v: number) => `${(v * 100).toFixed(2)}%`} />
-          </CardContent></Card>
-          
-          {/* Chart 2: Global Loss */}
-          <Card className="shadow-sm"><CardContent className="p-4">
-            <MiniLineChart title="Global Loss" xValues={rounds} series={globalLossSeries} formatter={(v: number) => v.toFixed(4)} />
-          </CardContent></Card>
+        {!isLlmRun && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pb-4">
+            <Card className="shadow-sm"><CardContent className="p-4">
+              <MiniLineChart title="Global Accuracy" xValues={rounds} series={globalAccSeries} formatter={(v: number) => `${(v * 100).toFixed(2)}%`} />
+            </CardContent></Card>
+            <Card className="shadow-sm"><CardContent className="p-4">
+              <MiniLineChart title="Global Loss" xValues={rounds} series={globalLossSeries} formatter={(v: number) => v.toFixed(4)} />
+            </CardContent></Card>
+            <Card className="shadow-sm"><CardContent className="p-4">
+              <MiniLineChart title="Client Train Accuracy" xValues={rounds} series={clientTrainAccSeries} formatter={(v: number) => `${(v * 100).toFixed(2)}%`} />
+            </CardContent></Card>
+            <Card className="shadow-sm"><CardContent className="p-4">
+              <MiniLineChart title="Client Test Accuracy" xValues={rounds} series={clientTestAccSeries} formatter={(v: number) => `${(v * 100).toFixed(2)}%`} />
+            </CardContent></Card>
+            <Card className="shadow-sm"><CardContent className="p-4">
+              <MiniLineChart title="Client Train Loss" xValues={rounds} series={clientTrainLossSeries} formatter={(v: number) => v.toFixed(4)} />
+            </CardContent></Card>
+            <Card className="shadow-sm"><CardContent className="p-4">
+              <MiniLineChart title="Client Test Loss" xValues={rounds} series={clientTestLossSeries} formatter={(v: number) => v.toFixed(4)} />
+            </CardContent></Card>
+          </div>
+        )}
 
-          {/* Chart 3: Client Train Acc */}
-          <Card className="shadow-sm"><CardContent className="p-4">
-            <MiniLineChart title="Client Train Accuracy" xValues={rounds} series={clientTrainAccSeries} formatter={(v: number) => `${(v * 100).toFixed(2)}%`} />
-          </CardContent></Card>
-
-          {/* Chart 4: Client Test Acc */}
-          <Card className="shadow-sm"><CardContent className="p-4">
-            <MiniLineChart title="Client Test Accuracy" xValues={rounds} series={clientTestAccSeries} formatter={(v: number) => `${(v * 100).toFixed(2)}%`} />
-          </CardContent></Card>
-
-          {/* Chart 5: Client Train Loss */}
-          <Card className="shadow-sm"><CardContent className="p-4">
-            <MiniLineChart title="Client Train Loss" xValues={rounds} series={clientTrainLossSeries} formatter={(v: number) => v.toFixed(4)} />
-          </CardContent></Card>
-
-          {/* Chart 6: Client Test Loss */}
-          <Card className="shadow-sm"><CardContent className="p-4">
-            <MiniLineChart title="Client Test Loss" xValues={rounds} series={clientTestLossSeries} formatter={(v: number) => v.toFixed(4)} />
-          </CardContent></Card>
-        </div>
+        {isLlmRun && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pb-4">
+            <Card className="shadow-sm"><CardContent className="p-4">
+              <MiniLineChart title="LLM Train Loss" xValues={rounds} series={llmTrainLossSeries(metrics)} formatter={(v: number) => v.toFixed(4)} />
+            </CardContent></Card>
+            <Card className="shadow-sm"><CardContent className="p-4">
+              <MiniLineChart title="LLM Validation Loss" xValues={rounds} series={llmValidationLossSeries(metrics)} formatter={(v: number) => v.toFixed(4)} emptyMessage="No validation data available." />
+            </CardContent></Card>
+            <Card className="shadow-sm"><CardContent className="p-4">
+              <MiniLineChart title="Perplexity" xValues={rounds} series={llmPerplexitySeries(metrics)} formatter={(v: number) => v.toFixed(2)} />
+            </CardContent></Card>
+            <Card className="shadow-sm"><CardContent className="p-4">
+              <MiniLineChart title="Token Throughput" xValues={rounds} series={llmThroughputSeries(metrics)} formatter={(v: number) => `${v.toFixed(1)} tok/s`} />
+            </CardContent></Card>
+            <Card className="shadow-sm"><CardContent className="p-4">
+              <MiniLineChart title="Adapter Size" xValues={rounds} series={llmAdapterSizeSeries(metrics)} formatter={(v: number) => formatBytes(v)} />
+            </CardContent></Card>
+            <Card className="shadow-sm"><CardContent className="p-4">
+              <MiniLineChart title="Client Train Loss" xValues={rounds} series={clientTrainLossSeries} formatter={(v: number) => v.toFixed(4)} />
+            </CardContent></Card>
+          </div>
+        )}
       </div>
 
       <div className="flex flex-col gap-4 min-h-0 overflow-auto pb-4">

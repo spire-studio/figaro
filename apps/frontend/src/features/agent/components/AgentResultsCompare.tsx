@@ -1,17 +1,32 @@
 import { useEffect, useMemo, useState } from "react";
-import { History, Bot, Activity, Trophy, ArrowRight, Target, Calendar, FileJson, Settings2 } from "lucide-react";
+import { History, Bot, Activity, Trophy, ArrowRight, Target, Calendar, FileJson, Settings2, Search, RotateCcw, GitCompare } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../../../components/ui/card";
 import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../components/ui/select";
 import { Separator } from "../../../components/ui/separator";
 import { MiniLineChart } from "../../simulation/components/MiniLineChart";
-import { getValueByPath, isRecord } from "../../simulation/utils";
+import { getValueByPath, isRecord, toClientSeries } from "../../simulation/utils";
+import {
+  formatBytes,
+  isLlmRunMetrics,
+  llmAdapterSizeSeries,
+  llmPerplexitySeries,
+  llmRounds,
+  llmThroughputSeries,
+  llmTrainLossSeries,
+  llmValidationLossSeries,
+  latestLlmLoss,
+  selectedClientsText,
+  shortHash,
+} from "../../simulation/llm-metrics";
 import { fmt } from "../../../lib/time";
 import type { AgentPageProps } from "../../../pages/types";
-import { baseUrl } from "../../../../src/api/client";
+import { baseUrl } from "../../../api/client";
+import { agentApi, type AgentConfigChange, type AgentConfigVersion, type AgentHistoryFilters } from "../../../api/agent";
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { collectAgentSchemaFields, formatFieldValue, optionLabel, type AgentSchemaField } from "../schema";
+import { collectAgentSchemaFields, formatFieldValue, optionDisabled, optionLabel, type AgentSchemaField } from "../schema";
 
 const CHART_COLORS = [
   "hsl(var(--primary))", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#06b6d4"
@@ -33,6 +48,26 @@ type ConfigSummaryItem = {
   path: string;
   label: string;
   value: string;
+};
+
+const HISTORY_STATUS_OPTIONS = [
+  { value: "all", label: "All status" },
+  { value: "completed", label: "Completed" },
+  { value: "running", label: "Running" },
+  { value: "pending_review", label: "Pending review" },
+  { value: "failed", label: "Failed" },
+  { value: "queued", label: "Queued" },
+];
+
+const OBJECTIVE_OPTIONS = [
+  { value: "all", label: "All objectives" },
+  { value: "auto", label: "Auto" },
+  { value: "accuracy", label: "Accuracy" },
+];
+
+type SelectOption = {
+  value: string;
+  label: string;
 };
 
 function asConfigRecord(value: unknown): Record<string, unknown> | null {
@@ -80,16 +115,84 @@ function buildConfigSummary(
     .filter((item): item is ConfigSummaryItem => item !== null);
 }
 
-export function AgentResultsCompare(props: AgentPageProps) {
-  const { historyJobs, selectedHistory, selectHistoryJob, setWorkflowStep, configSchema } = props;
+function formatDiffValue(value: unknown): string {
+  if (value === null || value === undefined) return "-";
+  if (typeof value === "string") return value;
+  return JSON.stringify(value);
+}
 
-  const jobs = (historyJobs || []).filter((job: any) => job.status === "completed");
+function experimentRankScore(experiment: any): number {
+  const llmLoss = latestLlmLoss(experiment?.metrics);
+  if (llmLoss !== null) return -llmLoss;
+  const score = Number(experiment?.score);
+  return Number.isFinite(score) ? score : Number.NEGATIVE_INFINITY;
+}
+
+function diffBadgeClass(changeType: string): string {
+  if (changeType === "added" || changeType === "initialize") return "border-emerald-500/70 text-emerald-600";
+  if (changeType === "removed") return "border-red-500/70 text-red-600";
+  return "border-amber-500/70 text-amber-600";
+}
+
+function schemaSelectOptions(schema: Record<string, unknown> | null, path: string): SelectOption[] {
+  const field = collectAgentSchemaFields(schema, { featuredOnly: false }).find((item) => item.path === path);
+  if (!field) return [];
+  return field.options
+    .filter((option) => !optionDisabled(field.definition, option))
+    .map((option) => ({ value: String(option), label: optionLabel(field.definition, option) }));
+}
+
+function optionSelect(
+  label: string,
+  value: string | undefined,
+  options: SelectOption[],
+  onChange: (value: string) => void,
+) {
+  return (
+    <div className="space-y-1">
+      <div className="text-[10px] font-semibold uppercase text-muted-foreground">{label}</div>
+      <Select value={value || "all"} onValueChange={onChange}>
+        <SelectTrigger className="h-8 text-xs">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">Any</SelectItem>
+          {options.map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
+export function AgentResultsCompare(props: AgentPageProps) {
+  const {
+    historyFilters,
+    historyJobs,
+    selectedHistory,
+    selectHistoryJob,
+    setHistoryFilters,
+    refreshHistoryJobs,
+    setWorkflowStep,
+    configSchema,
+    modelOptions,
+    notifyError,
+  } = props;
+
+  const jobs = historyJobs || [];
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [metrics, setMetrics] = useState<any>(null);
+  const [configVersions, setConfigVersions] = useState<AgentConfigVersion[]>([]);
+  const [fromVersionKey, setFromVersionKey] = useState("");
+  const [toVersionKey, setToVersionKey] = useState("");
+  const [configDiff, setConfigDiff] = useState<AgentConfigChange[]>([]);
 
   const experiments = selectedHistory?.experiments || [];
-  const bestExp = experiments.reduce((prev: any, curr: any) => 
-    (curr.score || 0) > (prev?.score || 0) ? curr : prev, experiments[0] || null);
+  const bestExp = experiments.reduce((prev: any, curr: any) =>
+    experimentRankScore(curr) > experimentRankScore(prev) ? curr : prev, experiments[0] || null);
   const bestConfig = asConfigRecord(selectedHistory?.best_config) ?? asConfigRecord(bestExp?.config);
   const bestConfigSummary = useMemo(
     () => buildConfigSummary(bestConfig, configSchema),
@@ -98,6 +201,13 @@ export function AgentResultsCompare(props: AgentPageProps) {
   const bestConfigJson = useMemo(
     () => (bestConfig ? JSON.stringify(bestConfig, null, 2) : ""),
     [bestConfig],
+  );
+  const datasetOptions = useMemo(() => schemaSelectOptions(configSchema, "dataset.name"), [configSchema]);
+  const configModelOptions = useMemo(() => schemaSelectOptions(configSchema, "model.name"), [configSchema]);
+  const aggregationOptions = useMemo(() => schemaSelectOptions(configSchema, "federated.aggregation"), [configSchema]);
+  const llmModelOptions = useMemo(
+    () => modelOptions.map((item) => ({ value: item, label: item })),
+    [modelOptions],
   );
 
   useEffect(() => {
@@ -122,22 +232,116 @@ export function AgentResultsCompare(props: AgentPageProps) {
       .catch(() => {});
   }, [selectedRunId]);
 
+  useEffect(() => {
+    const optimizationJobId = selectedHistory?.optimization_job_id;
+    if (!optimizationJobId) {
+      setConfigVersions([]);
+      setFromVersionKey("");
+      setToVersionKey("");
+      setConfigDiff([]);
+      return;
+    }
+
+    let cancelled = false;
+    agentApi.listConfigVersions(optimizationJobId)
+      .then((versions) => {
+        if (cancelled) return;
+        const experimentVersions = versions.filter((version) => version.source === "experiment");
+        const firstVersion = experimentVersions[0];
+        const lastVersion = experimentVersions[experimentVersions.length - 1];
+        setConfigVersions(experimentVersions);
+        setFromVersionKey(firstVersion ? String(firstVersion.id) : "");
+        setToVersionKey(lastVersion ? String(lastVersion.id) : "");
+        setConfigDiff([]);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setConfigVersions([]);
+          setFromVersionKey("");
+          setToVersionKey("");
+          setConfigDiff([]);
+          notifyError(error, "agent-config-versions");
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedHistory?.optimization_job_id]);
+
+  useEffect(() => {
+    const optimizationJobId = selectedHistory?.optimization_job_id;
+    const fromVersionId = Number(fromVersionKey);
+    const toVersionId = Number(toVersionKey);
+    if (
+      !optimizationJobId ||
+      !fromVersionKey ||
+      !toVersionKey ||
+      !Number.isFinite(fromVersionId) ||
+      !Number.isFinite(toVersionId) ||
+      fromVersionId === toVersionId
+    ) {
+      setConfigDiff([]);
+      return;
+    }
+
+    let cancelled = false;
+    agentApi.getConfigDiff(
+      optimizationJobId,
+      toVersionId,
+      fromVersionId,
+    )
+      .then((payload) => {
+        if (!cancelled) {
+          setConfigDiff(payload.changes);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setConfigDiff([]);
+          notifyError(error, "agent-config-diff");
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedHistory?.optimization_job_id, fromVersionKey, toVersionKey]);
+
+  function updateHistoryFilter<K extends keyof AgentHistoryFilters>(key: K, value: AgentHistoryFilters[K]): void {
+    setHistoryFilters((current) => ({ ...current, [key]: value }));
+  }
+
+  async function applyHistoryFilters(): Promise<void> {
+    const { q: _unusedTextFilter, ...selectableFilters } = historyFilters;
+    await refreshHistoryJobs(selectableFilters);
+  }
+
+  function resetHistoryFilters(): void {
+    const next: AgentHistoryFilters = { status: "all", objective: "all" };
+    setHistoryFilters(next);
+    void refreshHistoryJobs(next).catch((error: unknown) => notifyError(error, "agent-history-filter-reset"));
+  }
+
+  const isLlmRun = isLlmRunMetrics(metrics);
   const globalResults = metrics?.global_results || {};
-  const clientResults = metrics?.client_results || {};
-  const actualDataLength = globalResults.global_accuracy?.length || 0;
-  const rounds = globalResults.rounds ? globalResults.rounds.slice(0, actualDataLength) : Array.from({ length: actualDataLength }, (_, i) => i + 1);
+  const actualDataLength = isLlmRun
+    ? (metrics?.llm_results?.rounds?.length || metrics?.llm_results?.train_loss?.length || 0)
+    : (globalResults.global_accuracy?.length || 0);
+  const rounds = isLlmRun
+    ? llmRounds(metrics)
+    : globalResults.rounds ? globalResults.rounds.slice(0, actualDataLength) : Array.from({ length: actualDataLength }, (_, i) => i + 1);
   const safeSlice = (arr: any[]) => (arr || []).slice(0, actualDataLength);
 
   const globalAccSeries = [{ key: "g_acc", label: "Global Accuracy", color: CHART_COLORS[0], values: safeSlice(globalResults.global_accuracy) }];
   const globalLossSeries = [{ key: "g_loss", label: "Global Loss", color: CHART_COLORS[3], values: safeSlice(globalResults.global_loss) }];
-  const clientIds = Object.keys(clientResults);
-  const clientTrainAccSeries = clientIds.map((cId, idx) => ({ key: `${cId}_train_acc`, label: cId, color: CHART_COLORS[(idx + 1) % CHART_COLORS.length], values: safeSlice(clientResults[cId].train_acc) }));
-  const clientTrainLossSeries = clientIds.map((cId, idx) => ({ key: `${cId}_train_loss`, label: cId, color: CHART_COLORS[(idx + 1) % CHART_COLORS.length], values: safeSlice(clientResults[cId].train_loss) }));
-  const clientTestAccSeries = clientIds.map((cId, idx) => ({ key: `${cId}_test_acc`, label: cId, color: CHART_COLORS[(idx + 1) % CHART_COLORS.length], values: safeSlice(clientResults[cId].test_acc) }));
-  const clientTestLossSeries = clientIds.map((cId, idx) => ({ key: `${cId}_test_loss`, label: cId, color: CHART_COLORS[(idx + 1) % CHART_COLORS.length], values: safeSlice(clientResults[cId].test_loss) }));
+  const clientTrainAccSeries = toClientSeries(metrics, "train_acc", rounds);
+  const clientTrainLossSeries = toClientSeries(metrics, "train_loss", rounds);
+  const clientTestAccSeries = toClientSeries(metrics, "test_acc", rounds);
+  const clientTestLossSeries = toClientSeries(metrics, "test_loss", rounds);
 
   return (
-    <div className="grid h-full gap-4 xl:grid-cols-[300px_1fr]">
+    <div className="grid h-full gap-4 xl:grid-cols-[360px_1fr]">
       
       <Card className="flex flex-col min-h-0 bg-muted/10 border-r shadow-none rounded-none sm:rounded-xl">
         <CardHeader className="pb-3 px-4">
@@ -147,6 +351,48 @@ export function AgentResultsCompare(props: AgentPageProps) {
           <CardDescription className="text-xs">Past agent optimizations</CardDescription>
         </CardHeader>
         <CardContent className="flex-1 overflow-auto space-y-3 px-3 pb-4">
+          <div className="space-y-3 rounded-lg border bg-background/70 p-3">
+            <div className="flex items-center gap-2 text-xs font-semibold text-foreground">
+              <Search className="h-4 w-4 text-muted-foreground" />
+              Filter history
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <Select value={historyFilters.status ?? "all"} onValueChange={(value) => updateHistoryFilter("status", value)}>
+                <SelectTrigger className="h-8 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {HISTORY_STATUS_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={historyFilters.objective ?? "all"} onValueChange={(value) => updateHistoryFilter("objective", value as AgentHistoryFilters["objective"])}>
+                <SelectTrigger className="h-8 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {OBJECTIVE_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {optionSelect("Dataset", historyFilters.dataset, datasetOptions, (value) => updateHistoryFilter("dataset", value))}
+              {optionSelect("Model", historyFilters.config_model, configModelOptions, (value) => updateHistoryFilter("config_model", value))}
+              {optionSelect("Aggregation", historyFilters.aggregation, aggregationOptions, (value) => updateHistoryFilter("aggregation", value))}
+              {optionSelect("LLM", historyFilters.model_name, llmModelOptions, (value) => updateHistoryFilter("model_name", value))}
+            </div>
+            <div className="flex gap-2">
+              <Button type="button" size="sm" className="h-8 flex-1 text-xs" onClick={() => void applyHistoryFilters().catch((error: unknown) => notifyError(error, "agent-history-filter"))}>
+                <Search className="mr-2 h-3.5 w-3.5" /> Apply
+              </Button>
+              <Button type="button" variant="outline" size="sm" className="h-8 px-2" onClick={resetHistoryFilters} title="Reset filters">
+                <RotateCcw className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          </div>
           {jobs.length === 0 && <div className="text-xs text-muted-foreground text-center py-8">No history yet.</div>}
           
           {jobs.map((job: any) => {
@@ -212,10 +458,16 @@ export function AgentResultsCompare(props: AgentPageProps) {
                     <p className="font-bold text-emerald-800 dark:text-emerald-300">Optimal Configuration</p>
                   </div>
                   <div className="text-3xl font-black text-emerald-700 dark:text-emerald-400 mb-2">
-                    {bestExp?.score != null ? `${(bestExp.score * 100).toFixed(2)}%` : "N/A"}
+                    {isLlmRunMetrics(bestExp?.metrics)
+                      ? latestLlmLoss(bestExp?.metrics) !== null
+                        ? latestLlmLoss(bestExp?.metrics)?.toFixed(4)
+                        : "N/A"
+                      : bestExp?.score != null
+                        ? `${(bestExp.score * 100).toFixed(2)}%`
+                        : "N/A"}
                   </div>
                   <p className="text-xs text-emerald-700/70 dark:text-emerald-400/70">
-                    Experiment <strong>"{bestExp?.name}"</strong> yielded the highest accuracy.
+                    Experiment <strong>"{bestExp?.name}"</strong> yielded the {isLlmRunMetrics(bestExp?.metrics) ? "lowest visible LLM loss" : "highest accuracy"}.
                   </p>
                   {bestConfig ? (
                     <>
@@ -292,6 +544,90 @@ export function AgentResultsCompare(props: AgentPageProps) {
               </Card>
             </div>
 
+            <Card className="shadow-sm">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <GitCompare className="h-4 w-4 text-primary" /> Configuration Versions
+                </CardTitle>
+                <CardDescription className="text-xs">Compare captured experiment configs</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {configVersions.length === 0 ? (
+                  <div className="rounded-md border border-dashed py-6 text-center text-xs text-muted-foreground">
+                    No experiment configs for this job.
+                  </div>
+                ) : (
+                  <>
+                    <div className="grid gap-2 md:grid-cols-[1fr_1fr]">
+                      <Select value={fromVersionKey} onValueChange={setFromVersionKey}>
+                        <SelectTrigger className="h-9 text-xs">
+                          <SelectValue placeholder="From experiment" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {configVersions.map((version) => (
+                            <SelectItem key={version.id} value={String(version.id)}>
+                              {version.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Select value={toVersionKey} onValueChange={setToVersionKey}>
+                        <SelectTrigger className="h-9 text-xs">
+                          <SelectValue placeholder="To experiment" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {configVersions.map((version) => (
+                            <SelectItem key={version.id} value={String(version.id)}>
+                              {version.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="grid gap-2 md:grid-cols-3">
+                      {configVersions.slice(-3).map((version) => (
+                        <div key={version.id} className="rounded-md border bg-muted/20 px-3 py-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="truncate text-xs font-semibold">{version.label}</span>
+                            <Badge variant="outline" className="shrink-0 text-[10px]">{version.source}</Badge>
+                          </div>
+                          <div className="mt-1 text-[10px] text-muted-foreground">
+                            Iteration {version.iteration || "-"} - {fmt(version.created_at)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="max-h-72 overflow-auto rounded-md border">
+                      {configDiff.length === 0 ? (
+                        <div className="p-4 text-center text-xs text-muted-foreground">No config changes.</div>
+                      ) : (
+                        <div className="divide-y">
+                          {configDiff.map((change, index) => (
+                            <div key={`${change.path}-${index}`} className="grid gap-2 p-3 text-xs md:grid-cols-[180px_90px_1fr]">
+                              <div className="break-all font-semibold text-foreground">{change.path}</div>
+                              <Badge variant="outline" className={`h-5 w-fit text-[10px] ${diffBadgeClass(change.change_type)}`}>
+                                {change.change_type}
+                              </Badge>
+                              <div className="grid gap-1 text-muted-foreground sm:grid-cols-2">
+                                <div className="min-w-0 rounded bg-muted/30 px-2 py-1">
+                                  <span className="font-semibold text-foreground/70">Before </span>
+                                  <span className="break-all">{formatDiffValue(change.old_value)}</span>
+                                </div>
+                                <div className="min-w-0 rounded bg-muted/30 px-2 py-1">
+                                  <span className="font-semibold text-foreground/70">After </span>
+                                  <span className="break-all">{formatDiffValue(change.new_value)}</span>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+
             <div className="mt-4">
               <h3 className="text-sm font-bold tracking-tight flex items-center gap-2 mb-3">
                 <Activity className="h-4 w-4 text-primary" /> 
@@ -321,14 +657,66 @@ export function AgentResultsCompare(props: AgentPageProps) {
             </div>
 
             {selectedRunId ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
-                <Card className="shadow-sm"><CardContent className="p-4"><MiniLineChart title="Global Accuracy" xValues={rounds} series={globalAccSeries} formatter={(v: number) => `${(v * 100).toFixed(2)}%`} /></CardContent></Card>
-                <Card className="shadow-sm"><CardContent className="p-4"><MiniLineChart title="Global Loss" xValues={rounds} series={globalLossSeries} formatter={(v: number) => v.toFixed(4)} /></CardContent></Card>
-                <Card className="shadow-sm"><CardContent className="p-4"><MiniLineChart title="Client Train Accuracy" xValues={rounds} series={clientTrainAccSeries} formatter={(v: number) => `${(v * 100).toFixed(2)}%`} /></CardContent></Card>
-                <Card className="shadow-sm"><CardContent className="p-4"><MiniLineChart title="Client Test Accuracy" xValues={rounds} series={clientTestAccSeries} formatter={(v: number) => `${(v * 100).toFixed(2)}%`} /></CardContent></Card>
-                <Card className="shadow-sm"><CardContent className="p-4"><MiniLineChart title="Client Train Loss" xValues={rounds} series={clientTrainLossSeries} formatter={(v: number) => v.toFixed(4)} /></CardContent></Card>
-                <Card className="shadow-sm"><CardContent className="p-4"><MiniLineChart title="Client Test Loss" xValues={rounds} series={clientTestLossSeries} formatter={(v: number) => v.toFixed(4)} /></CardContent></Card>
-              </div>
+              <>
+                {!isLlmRun && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+                    <Card className="shadow-sm"><CardContent className="p-4"><MiniLineChart title="Global Accuracy" xValues={rounds} series={globalAccSeries} formatter={(v: number) => `${(v * 100).toFixed(2)}%`} /></CardContent></Card>
+                    <Card className="shadow-sm"><CardContent className="p-4"><MiniLineChart title="Global Loss" xValues={rounds} series={globalLossSeries} formatter={(v: number) => v.toFixed(4)} /></CardContent></Card>
+                    <Card className="shadow-sm"><CardContent className="p-4"><MiniLineChart title="Client Train Accuracy" xValues={rounds} series={clientTrainAccSeries} formatter={(v: number) => `${(v * 100).toFixed(2)}%`} /></CardContent></Card>
+                    <Card className="shadow-sm"><CardContent className="p-4"><MiniLineChart title="Client Test Accuracy" xValues={rounds} series={clientTestAccSeries} formatter={(v: number) => `${(v * 100).toFixed(2)}%`} /></CardContent></Card>
+                    <Card className="shadow-sm"><CardContent className="p-4"><MiniLineChart title="Client Train Loss" xValues={rounds} series={clientTrainLossSeries} formatter={(v: number) => v.toFixed(4)} /></CardContent></Card>
+                    <Card className="shadow-sm"><CardContent className="p-4"><MiniLineChart title="Client Test Loss" xValues={rounds} series={clientTestLossSeries} formatter={(v: number) => v.toFixed(4)} /></CardContent></Card>
+                  </div>
+                )}
+                {isLlmRun && (
+                  <div className="space-y-4 mt-2">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <Card className="shadow-sm"><CardContent className="p-4"><MiniLineChart title="LLM Train Loss" xValues={rounds} series={llmTrainLossSeries(metrics)} formatter={(v: number) => v.toFixed(4)} /></CardContent></Card>
+                      <Card className="shadow-sm"><CardContent className="p-4"><MiniLineChart title="LLM Validation Loss" xValues={rounds} series={llmValidationLossSeries(metrics)} formatter={(v: number) => v.toFixed(4)} emptyMessage="No validation data available." /></CardContent></Card>
+                      <Card className="shadow-sm"><CardContent className="p-4"><MiniLineChart title="Perplexity" xValues={rounds} series={llmPerplexitySeries(metrics)} formatter={(v: number) => v.toFixed(2)} /></CardContent></Card>
+                      <Card className="shadow-sm"><CardContent className="p-4"><MiniLineChart title="Token Throughput" xValues={rounds} series={llmThroughputSeries(metrics)} formatter={(v: number) => `${v.toFixed(1)} tok/s`} /></CardContent></Card>
+                      <Card className="shadow-sm"><CardContent className="p-4"><MiniLineChart title="Adapter Size" xValues={rounds} series={llmAdapterSizeSeries(metrics)} formatter={(v: number) => formatBytes(v)} /></CardContent></Card>
+                      <Card className="shadow-sm"><CardContent className="p-4"><MiniLineChart title="Client Train Loss" xValues={rounds} series={clientTrainLossSeries} formatter={(v: number) => v.toFixed(4)} /></CardContent></Card>
+                    </div>
+                    <Card className="shadow-sm">
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm">Adapter Lineage</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="overflow-auto rounded-md border">
+                          <table className="w-full min-w-[680px] text-left text-xs">
+                            <thead className="border-b bg-muted/40 text-muted-foreground">
+                              <tr>
+                                <th className="px-3 py-2 font-medium">Round</th>
+                                <th className="px-3 py-2 font-medium">Clients</th>
+                                <th className="px-3 py-2 font-medium">Size</th>
+                                <th className="px-3 py-2 font-medium">SHA-256</th>
+                                <th className="px-3 py-2 font-medium">Parent</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {(metrics?.llm_artifacts ?? []).map((artifact: Record<string, unknown>, index: number) => (
+                                <tr key={`${artifact.path ?? index}`} className="border-b last:border-none">
+                                  <td className="px-3 py-2 font-mono">{formatFieldValue(artifact.round)}</td>
+                                  <td className="px-3 py-2 font-mono">{selectedClientsText(artifact.selected_clients)}</td>
+                                  <td className="px-3 py-2 font-mono">{formatBytes(artifact.size_bytes)}</td>
+                                  <td className="px-3 py-2 font-mono" title={String(artifact.sha256 ?? "")}>{shortHash(artifact.sha256)}</td>
+                                  <td className="px-3 py-2 font-mono" title={String(artifact.parent_sha256 ?? "")}>{shortHash(artifact.parent_sha256)}</td>
+                                </tr>
+                              ))}
+                              {(metrics?.llm_artifacts ?? []).length === 0 && (
+                                <tr>
+                                  <td colSpan={5} className="px-3 py-6 text-center text-muted-foreground">No adapter artifacts recorded yet.</td>
+                                </tr>
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+                )}
+              </>
             ) : (
                <div className="text-center py-10 text-sm text-muted-foreground border border-dashed rounded-lg">
                  Select an experiment above to load its charts.

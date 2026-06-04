@@ -22,11 +22,14 @@ from fl_core.utils.logger import Logger
 from fl_core.data.data_loader import DataManager
 from fl_core.data.data_splitter import DataSplitter, FederatedDataManager
 from fl_core.models.model_manager import ModelManager
+from fl_core.simulation_registry import resolve_model_name_for_dataset
 from fl_core.federated.server import FederatedServer
 from fl_core.federated.client import FederatedClient
 from fl_core.federated.client_manager import ClientManager
-from fl_core.compression.sparsification import GlobalTopKSparsifier
+from fl_core.compression.sparsification import CompressionFactory
+from fl_core.privacy.differential_privacy import DifferentialPrivacyManager
 from fl_core.privacy.encryption import CKKSManager
+from fl_core.privacy.secure_aggregation import SecureAggregationMasker
 from fl_core.federated.communication import GRPCServer, GRPCWorker, GRPCClientProxy
 WebApp = None
 
@@ -96,14 +99,36 @@ class FederatedLearningFramework:
             
             self.sparsifier = None
             if sparsify_conf.get('enable', False):
+                method = sparsify_conf.get('method', 'global_topk')
                 ratio = sparsify_conf.get('ratio', 0.5)
-                self.sparsifier = GlobalTopKSparsifier(ratio=ratio)
+                threshold = sparsify_conf.get('threshold', 1e-3)
+                self.sparsifier = CompressionFactory.create(method=method, ratio=ratio, threshold=threshold)
                 print(f"✓ 通信压缩: 稀疏化已启用 (Ratio: {ratio})")
             
 
             privacy_config = self.config_manager.config.get('privacy', {})
             ckks_conf = privacy_config.get('homomorphic_encryption', {})
+            dp_conf = privacy_config.get('differential_privacy', {})
+            secure_agg_conf = privacy_config.get('secure_aggregation', {})
             
+            self.dp_manager = None
+            if dp_conf.get('enable', False):
+                self.dp_manager = DifferentialPrivacyManager(
+                    clipping_norm=dp_conf.get('clipping_norm', 1.0),
+                    noise_multiplier=dp_conf.get('noise_multiplier', 0.0),
+                )
+                print(
+                    "Differential privacy enabled: "
+                    f"clip={self.dp_manager.clipping_norm}, noise={self.dp_manager.noise_multiplier}"
+                )
+
+            self.secure_aggregation = None
+            if secure_agg_conf.get('enable', False):
+                self.secure_aggregation = SecureAggregationMasker(
+                    mask_std=secure_agg_conf.get('mask_std', 1.0),
+                )
+                print(f"Secure aggregation masking enabled: std={self.secure_aggregation.mask_std}")
+
             self.ckks_manager = None
             if ckks_conf.get('enable', False):
                 # 暂不支持同时开启
@@ -155,7 +180,10 @@ class FederatedLearningFramework:
                 "dataset_name": dataset_cfg.get('name', 'Unknown'),
                 "distribution": dataset_cfg.get('distribution', 'iid'),
                 "alpha": dataset_cfg.get('alpha', 'N/A'),
-                "model_name": model_cfg.get('name', 'Unknown'),
+                "model_name": resolve_model_name_for_dataset(
+                    model_cfg.get('name'),
+                    dataset_cfg.get('name', 'CIFAR-10'),
+                ),
                 "num_classes": model_cfg.get('num_classes', 10)
             },
             "federated": {
@@ -169,13 +197,23 @@ class FederatedLearningFramework:
             "security": {
                 "encryption": {
                     "enabled": privacy_cfg.get('homomorphic_encryption', {}).get('enable', False),
-                    "type": "CKKS",
+                    "type": privacy_cfg.get('homomorphic_encryption', {}).get('method', 'ckks'),
                     "poly_modulus_degree": privacy_cfg.get('homomorphic_encryption', {}).get('poly_modulus_degree', 0)
+                },
+                "differential_privacy": {
+                    "enabled": privacy_cfg.get('differential_privacy', {}).get('enable', False),
+                    "clipping_norm": privacy_cfg.get('differential_privacy', {}).get('clipping_norm', 1.0),
+                    "noise_multiplier": privacy_cfg.get('differential_privacy', {}).get('noise_multiplier', 0.0),
+                },
+                "secure_aggregation": {
+                    "enabled": privacy_cfg.get('secure_aggregation', {}).get('enable', False),
+                    "mask_std": privacy_cfg.get('secure_aggregation', {}).get('mask_std', 1.0),
                 },
                 "compression": {
                     "enabled": compression_cfg.get('sparsification', {}).get('enable', False),
-                    "type": "Global Top-K",
-                    "ratio": compression_cfg.get('sparsification', {}).get('ratio', 0.0)
+                    "type": compression_cfg.get('sparsification', {}).get('method', 'global_topk'),
+                    "ratio": compression_cfg.get('sparsification', {}).get('ratio', 0.0),
+                    "threshold": compression_cfg.get('sparsification', {}).get('threshold', 1e-3),
                 }
             }
         }
@@ -248,7 +286,9 @@ class FederatedLearningFramework:
         self.client_manager = ClientManager(
             clients=[],
             sparsifier=self.sparsifier,
-            ckks_manager=self.ckks_manager
+            ckks_manager=self.ckks_manager,
+            dp_manager=self.dp_manager,
+            secure_aggregation=self.secure_aggregation,
         )
 
         self.logger.log_info(f"等待 {federated_config.get('num_clients')} 个远程客户端连接...")
@@ -422,11 +462,16 @@ class FederatedLearningFramework:
             self.model_manager = ModelManager(model_config)
             
             dataset_info = self.data_manager.get_dataset_info()
+            model_name = resolve_model_name_for_dataset(
+                model_config.get('name'),
+                dataset_info['name'],
+            )
             
             global_model = self.model_manager.create_model(
-                model_name=model_config.get('name'),
+                model_name=model_name,
                 input_shape=dataset_info['input_shape'],
-                num_classes=dataset_info['num_classes']
+                num_classes=dataset_info['num_classes'],
+                dataset_info=dataset_info,
             )
             
             self.global_model = global_model
@@ -479,6 +524,8 @@ class FederatedLearningFramework:
                 clients=clients,
                 sparsifier=self.sparsifier,
                 ckks_manager=self.ckks_manager,
+                dp_manager=self.dp_manager,
+                secure_aggregation=self.secure_aggregation,
                 selection_strategy="random"
             )
             # Parallel client training races the global torch RNG inside
@@ -524,7 +571,7 @@ class FederatedLearningFramework:
                 self.client_manager.broadcast_model_to_clients(all_clients, global_params)
                 
                 training_results = self.client_manager.train_clients(
-                    selected_clients=all_clients,
+                    selected_clients=selected_clients,
                     epochs=local_epochs,
                     learning_rate=learning_rate,
                     round_num=round_num

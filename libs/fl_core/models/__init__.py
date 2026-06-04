@@ -3,6 +3,15 @@
 
 from .lenet import LeNet, LeNetCIFAR
 from .cnn import SimpleCNN, DeepCNN, CNNMNIST
+from .basic import (
+    MclrLogistic,
+    DNN,
+    FedAvgCNN,
+    TextLogistic,
+    TextDNN,
+    TextCNN,
+    CharLSTM,
+)
 from .resnet import (
     ResNet18, ResNet34, ResNet50,
     ResNet18CIFAR, ResNet34CIFAR,
@@ -12,6 +21,8 @@ from .model_manager import ModelManager
 
 __all__ = [
     'LeNet', 'LeNetCIFAR',
+    'MclrLogistic', 'DNN', 'FedAvgCNN',
+    'TextLogistic', 'TextDNN', 'TextCNN', 'CharLSTM',
     'SimpleCNN', 'DeepCNN', 'CNNMNIST',
     'ResNet18', 'ResNet34', 'ResNet50',
     'ResNet18CIFAR', 'ResNet34CIFAR',

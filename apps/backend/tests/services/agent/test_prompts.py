@@ -17,6 +17,8 @@ def test_build_plan_system_instructions_includes_global_prompt():
     instructions = build_plan_system_instructions("test alpha=0.1,0.3")
     assert "User experiment request" in instructions
     assert "test alpha=0.1,0.3" in instructions
+    assert "LLM PEFT simulation" in instructions
+    assert "validation or perplexity" in instructions
 
 
 def test_build_plan_prompt_includes_history_and_context():
@@ -49,5 +51,6 @@ def test_build_plan_prompt_includes_history_and_context():
     assert "Schema context from config_schema.yaml" in prompt
     assert "User-selected structured constraints" in prompt
     assert "disabled_options" in prompt
+    assert "evaluation.enable=true" in prompt
     assert "ResNet" in prompt
     assert "Return ONLY a JSON object" in prompt

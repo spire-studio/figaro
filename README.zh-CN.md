@@ -195,8 +195,12 @@ figaro/
 │   ├── models/               # CNN / ResNet
 │   ├── data/                 # 数据加载与划分
 │   ├── privacy/              # CKKS 加密
-│   └── compression/          # Top-K 稀疏化
+│   ├── compression/          # Top-K 稀疏化
+│   └── llm/                  # LLM PEFT 运行时工具
 ├── configs/                  # 实验配置
+├── datasets/llm/             # 本地 LLM SFT / 评测 JSONL 文件
+├── models/llm/               # 本地 Hugging Face 兼容 LLM 目录
+├── skill/                    # 本地操作说明 skill
 ├── scripts/                  # Docker 部署脚本
 └── .github/workflows/        # CI 流水线
 ```
@@ -211,14 +215,16 @@ figaro/
 - [x] **Agent 交互体验升级** —— 支持多轮对话微调实验计划，提供实验执行前的Plan Preview。
 - [x] **执行与分析透明化** —— 支持实验节点的实时状态追踪，以及 Agent 驱动的运行结果自动化图表解释。
 - [x] **配置引擎重构** —— 引入基于 Pydantic/JSON Schema 的严格强校验，彻底修复 `config_schema` 与底层算法实现不一致的问题。
-- [ ] **高阶实验管理** —— 支持按指标、超参等多维度搜索过滤实验历史，支持配置文件版本控制与 Diff 差异对比。
+- [x] **高阶实验管理** —— 支持按指标、超参等多维度搜索过滤实验历史，支持配置文件版本控制与 Diff 差异对比。
 
-**Phase 2：LLM / LoRA 联邦微调支持**
-- [ ] **大模型生态原生接入** —— 内置 Hugging Face 适配层，一键加载主流开源模型，支持 JSONL 格式的指令微调数据集高效解析。
-- [ ] **高效分布式微调** —— 深度集成 LoRA/PEFT 训练环境，支持 QLoRA (4-bit/8-bit 量化) 以显著降低边缘节点的显存门槛。
-- [ ] **专属权重聚合策略** —— 针对 LLM 微调定制的 Adapter 权重聚合机制，探索支持客户端异构 LoRA Rank 的聚合方案。
-- [ ] **大模型专项评估体系** —— 集成生成式 NLP 指标，并引入基于大模型的自动化指令跟随能力评估 (LLM-as-a-Judge)。
-- [ ] **资源护栏与预判** —— 训练任务启动前进行动态 GPU 显存预估（防 OOM 机制），并支持梯度累积与 Checkpointing 的自动调优。
+**Phase 2：基于现有框架的 LLM 联邦 PEFT 微调支持**
+- [x] **单机仿真 LoRA/PEFT SFT 路线** —— `task.type=llm_peft_sft` 会分发到专用的单机仿真运行时，加载 Hugging Face 或本地 Causal LM，注入 LoRA Adapter，并基于 JSONL 数据执行每个客户端的监督微调。
+- [x] **LLM/PEFT 配置面扩展** —— `config_schema` 与运行时规范化已覆盖基础模型、Tokenizer、最大序列长度、精度、SFT 数据路径/格式、Prompt 模板、LoRA 超参、目标模块、量化模式和 Adapter 续跑路径。
+- [x] **JSONL SFT 数据管线** —— 支持 prompt/completion 与 messages 两类 JSONL 格式，支持确定性的客户端数据切分，并提供 plain/chat 风格的文本渲染。
+- [x] **Adapter 权重联邦聚合** —— 按客户端样本数聚合 LoRA/PEFT Adapter Tensor，持久化全局 Adapter 产物，记录 SHA-256 血缘，并支持从历史全局 Adapter warm start 续跑。
+- [x] **LLM 运行依赖与指标** —— 主项目依赖已包含 `transformers`、`peft`、`accelerate`、`safetensors`、`bitsandbytes`；后端指标已包含 train loss、perplexity、token throughput、adapter size、运行状态、数据摘要和 Adapter artifact lineage。
+- [x] **前端与 Agent 的 LLM 运行体验** —— 已在 schema-driven Simulation UI 与 Agent 规划流中开放 LLM 路线，支持按任务类型显示/隐藏字段、LLM 指标曲线、本地模型/数据集选择，以及 Adapter Lineage 产物视图。
+- [x] **评测与 Smoke 配置** —— 已增加验证集 JSONL 配置、全局 Adapter 聚合后的逐轮 evaluation loss/perplexity 计算、标准化评测指标，以及 tiny-model LLM PEFT smoke fixture/config。
 
 **Phase 3：平台化与企业级协作**
 - [ ] **多租户与细粒度权限** —— 构建多用户隔离的项目空间 (Workspaces)，引入基于角色的访问控制 (RBAC) 和完整的操作审计日志。

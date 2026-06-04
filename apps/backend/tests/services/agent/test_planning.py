@@ -3,6 +3,10 @@ from app.services.agent.planning import (
     build_initial_config,
     build_schema_prompt_context,
     collect_disabled_option_errors,
+    deep_merge_config,
+    infer_sft_settings_for_dataset_path,
+    lock_structured_constraints,
+    merge_llm_resource_constraints,
     select_llm_model,
 )
 
@@ -43,10 +47,68 @@ def test_build_initial_config_uses_schema_defaults():
 
 def test_build_initial_config_hardcoded_defaults_on_empty_schema():
     cfg = build_initial_config({})
+    assert cfg["task"]["type"] == "classic_fl"
     assert cfg["dataset"]["name"] == "CIFAR-10"
-    assert cfg["model"]["name"] == "CNN"
+    assert cfg["model"]["name"] == "Auto"
     assert cfg["federated"]["num_clients"] == 3
     assert cfg["federated"]["num_rounds"] == 10
+
+
+def test_lock_structured_constraints_override_llm_patch_values():
+    constrained_base = {
+        "dataset": {"name": "FEMNIST", "alpha": 0.5},
+        "model": {"name": "LeNet"},
+        "federated": {"aggregation": "fedavg"},
+    }
+    llm_patch = {
+        "dataset": {"name": "CIFAR-10", "alpha": 0.1},
+        "model": {"name": "Auto"},
+    }
+    constraints = {"dataset": {"name": "FEMNIST"}, "model": {"name": "LeNet"}}
+
+    merged = deep_merge_config(constrained_base, llm_patch)
+    locked = lock_structured_constraints(merged, constraints)
+
+    assert locked["dataset"]["name"] == "FEMNIST"
+    assert locked["dataset"]["alpha"] == 0.1
+    assert locked["model"]["name"] == "LeNet"
+
+
+def test_llm_resource_constraints_lock_effective_dataset_defaults():
+    constrained_base = {
+        "task": {"type": "llm_peft_sft"},
+        "llm": {"base_model": "./models/llm/tiny"},
+        "sft": {"dataset_path": "./datasets/llm/alpaca"},
+        "evaluation": {"enable": True, "dataset_path": "./datasets/llm/validation.jsonl"},
+    }
+    llm_patch = {
+        "sft": {"dataset_path": "./datasets/llm/train.jsonl"},
+        "evaluation": {"dataset_path": "./datasets/llm/train.jsonl"},
+    }
+
+    constraints = merge_llm_resource_constraints(constrained_base, {})
+    locked = lock_structured_constraints(deep_merge_config(constrained_base, llm_patch), constraints)
+
+    assert locked["llm"]["base_model"] == "./models/llm/tiny"
+    assert locked["sft"]["dataset_path"] == "./datasets/llm/alpaca"
+    assert locked["sft"]["file_format"] == "auto"
+    assert locked["sft"]["format"] == "alpaca"
+    assert locked["evaluation"]["dataset_path"] == "./datasets/llm/validation.jsonl"
+
+
+def test_infer_sft_settings_from_dataset_path():
+    assert infer_sft_settings_for_dataset_path("./datasets/llm/train.jsonl") == {
+        "file_format": "jsonl",
+        "format": "prompt_completion",
+    }
+    assert infer_sft_settings_for_dataset_path("./datasets/llm/alpaca") == {
+        "file_format": "auto",
+        "format": "alpaca",
+    }
+    assert infer_sft_settings_for_dataset_path("./datasets/llm/chat.parquet") == {
+        "file_format": "parquet",
+        "format": "messages",
+    }
 
 
 def test_schema_prompt_context_marks_disabled_options():

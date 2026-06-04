@@ -1,5 +1,5 @@
-import { ArrowRight, Loader2, SlidersHorizontal, Sparkles, X } from "lucide-react";
-import { useMemo } from "react";
+import { ArrowRight, Loader2, RefreshCw, SlidersHorizontal, Sparkles, X } from "lucide-react";
+import { useMemo, useState } from "react";
 
 import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
@@ -12,17 +12,23 @@ import { Textarea } from "../../../components/ui/textarea";
 import type { AgentPageProps } from "../../../pages/types";
 import { getValueByPath } from "../../simulation/utils";
 import {
+  booleanDisabledForConfig,
+  booleanDisableReasonForConfig,
+  agentFieldVisibleForConfig,
   buildAgentConfig,
-  checkDependency,
   coerceFieldValue,
   collectAgentSchemaFields,
+  fieldEmptyMessage,
+  fieldCompatibilityHint,
   formatFieldValue,
-  optionDisabled,
+  optionDisableReasonForConfig,
+  optionDisabledForConfig,
   optionLabel,
   optionMeta,
   selectedConstraintChips,
   type AgentSchemaField,
 } from "../schema";
+import { isModelCompatibleWithDataset } from "../../config/compatibility";
 
 export function AgentExperimentStudio(props: AgentPageProps) {
   const {
@@ -37,7 +43,10 @@ export function AgentExperimentStudio(props: AgentPageProps) {
     presets,
     busy,
     handleGeneratePlan,
+    notifyError,
+    refreshLlmResources,
   } = props;
+  const [refreshingResources, setRefreshingResources] = useState(false);
 
   const fields = useMemo(() => collectAgentSchemaFields(configSchema, { featuredOnly: true }), [configSchema]);
   const effectiveConfig = useMemo(
@@ -45,10 +54,21 @@ export function AgentExperimentStudio(props: AgentPageProps) {
     [configConstraints, configSchema],
   );
   const chips = useMemo(
-    () => selectedConstraintChips(configSchema, configConstraints),
-    [configConstraints, configSchema],
+    () => selectedConstraintChips(configSchema, configConstraints, effectiveConfig),
+    [configConstraints, configSchema, effectiveConfig],
   );
-  const visibleFields = fields.filter((field) => checkDependency(effectiveConfig, field.definition.depends_on));
+  const visibleFields = fields.filter((field) => agentFieldVisibleForConfig(field, effectiveConfig));
+
+  async function handleRefreshResources(): Promise<void> {
+    setRefreshingResources(true);
+    try {
+      await refreshLlmResources();
+    } catch (error) {
+      notifyError(error, "agent-llm-resources-refresh");
+    } finally {
+      setRefreshingResources(false);
+    }
+  }
 
   return (
     <div className="flex h-full w-full flex-col items-center justify-center space-y-6 max-w-3xl mx-auto py-12">
@@ -72,7 +92,7 @@ export function AgentExperimentStudio(props: AgentPageProps) {
             <label className="text-sm font-medium">Experiment Goal</label>
             <Textarea 
               className="min-h-[120px] text-base resize-none"
-              placeholder="E.g., Compare FedAvg vs FedProx on CIFAR-10 with high data heterogeneity (alpha=0.1)..."
+              placeholder="E.g., Compare FedAvg on CIFAR-10, or run LLM PEFT SFT with LoRA rank 8 on a JSONL dataset..."
               value={goal}
               onChange={(e) => setGoal(e.target.value)}
             />
@@ -96,6 +116,21 @@ export function AgentExperimentStudio(props: AgentPageProps) {
                 <SlidersHorizontal className="h-4 w-4 text-primary" />
                 <p className="text-sm font-semibold">Default Config</p>
               </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 gap-2 px-2.5 text-xs"
+                disabled={refreshingResources}
+                onClick={() => { void handleRefreshResources(); }}
+              >
+                {refreshingResources ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-3.5 w-3.5" />
+                )}
+                <span>Refresh resources</span>
+              </Button>
             </div>
 
             {visibleFields.length === 0 && (
@@ -106,9 +141,19 @@ export function AgentExperimentStudio(props: AgentPageProps) {
                 {visibleFields.map((field) => (
                   <ConstraintField
                     key={field.path}
+                    config={effectiveConfig}
                     field={field}
                     value={getValueByPath(configConstraints, field.path) ?? field.defaultValue}
-                    onChange={(value) => setConfigConstraint(field.path, coerceFieldValue(field, value))}
+                    onChange={(value) => {
+                      const coerced = coerceFieldValue(field, value);
+                      setConfigConstraint(field.path, coerced);
+                      if (field.path === "dataset.name") {
+                        const currentModel = getValueByPath(effectiveConfig, "model.name");
+                        if (!isModelCompatibleWithDataset(currentModel, String(coerced))) {
+                          setConfigConstraint("model.name", "Auto");
+                        }
+                      }
+                    }}
                   />
                 ))}
               </div>
@@ -167,10 +212,12 @@ function parseOptionalNumber(value: unknown): number | undefined {
 }
 
 function ConstraintField({
+  config,
   field,
   value,
   onChange,
 }: {
+  config: Record<string, unknown>;
   field: AgentSchemaField;
   value: unknown;
   onChange: (value: unknown) => void;
@@ -178,6 +225,14 @@ function ConstraintField({
   const hint = field.definition.ui && typeof field.definition.ui.prompt_hint === "string"
     ? field.definition.ui.prompt_hint
     : null;
+  const compatibilityHint = fieldCompatibilityHint(field.path, config);
+  const boolDisabled = booleanDisabledForConfig(field.path, value, config);
+  const boolReason = booleanDisableReasonForConfig(field.path, value, config);
+  const textOptions = field.options.map((option) => String(option));
+  const textValue = formatFieldValue(value);
+  const selectedTextOption = textOptions.includes(textValue) ? textValue : "";
+  const customTextOption = textValue !== "-" && selectedTextOption === "" ? textValue : null;
+  const emptyMessage = field.options.length === 0 ? fieldEmptyMessage(field) : null;
 
   return (
     <div className="space-y-1 rounded-md border border-border/70 bg-background/60 p-3">
@@ -186,6 +241,9 @@ function ConstraintField({
         <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{field.section}</span>
       </div>
       {field.type === "select" && (
+        emptyMessage ? (
+          <Input className="font-mono text-muted-foreground" value={emptyMessage} disabled />
+        ) : (
         <Select value={String(value ?? "")} onValueChange={onChange}>
           <SelectTrigger className="font-mono">
             <SelectValue placeholder="Select option" />
@@ -193,22 +251,28 @@ function ConstraintField({
           <SelectContent>
             {field.options.map((option) => {
               const meta = optionMeta(field.definition, option);
+              const disabled = optionDisabledForConfig(field.definition, option, field.path, config);
+              const reason = optionDisableReasonForConfig(field.definition, option, field.path, config);
               return (
                 <SelectItem
                   key={`${field.path}-${String(option)}`}
                   value={String(option)}
-                  disabled={optionDisabled(field.definition, option)}
+                  disabled={disabled}
                   className="font-mono"
                 >
-                  <span className="flex items-center gap-2">
-                    {optionLabel(field.definition, option)}
-                    {typeof meta.badge === "string" && <span className="text-[10px] text-amber-400">{meta.badge}</span>}
+                  <span className="flex flex-col gap-0.5">
+                    <span className="flex items-center gap-2">
+                      {optionLabel(field.definition, option)}
+                      {typeof meta.badge === "string" && <span className="text-[10px] text-amber-400">{meta.badge}</span>}
+                    </span>
+                    {reason && <span className="text-[10px] text-muted-foreground">{reason}</span>}
                   </span>
                 </SelectItem>
               );
             })}
           </SelectContent>
         </Select>
+        )
       )}
       {field.type === "number" && (
         <NumberStepper
@@ -223,12 +287,57 @@ function ConstraintField({
       {field.type === "bool" && (
         <div className="flex h-10 items-center justify-between rounded-md border border-input bg-background/40 px-3">
           <span className="text-sm">{formatFieldValue(value)}</span>
-          <Switch checked={Boolean(value)} onCheckedChange={onChange} />
+          <Switch checked={Boolean(value)} onCheckedChange={onChange} disabled={boolDisabled} />
         </div>
       )}
       {field.type !== "select" && field.type !== "number" && field.type !== "bool" && (
-        <Input className="font-mono" value={formatFieldValue(value)} onChange={(event) => onChange(event.target.value)} />
+        emptyMessage ? (
+          <Input className="font-mono text-muted-foreground" value={emptyMessage} disabled />
+        ) : textOptions.length > 0 ? (
+          <Select value={customTextOption ?? selectedTextOption} onValueChange={onChange}>
+            <SelectTrigger
+              className="font-mono overflow-hidden [&>span]:block [&>span]:truncate [&>span]:whitespace-nowrap"
+              title={textValue}
+            >
+              <SelectValue placeholder="Choose option" />
+            </SelectTrigger>
+            <SelectContent className="max-w-[min(36rem,calc(100vw-2rem))]">
+              {customTextOption && (
+                <SelectItem
+                  value={customTextOption}
+                  className="font-mono"
+                  title={customTextOption}
+                >
+                  <span className="block max-w-full truncate">{customTextOption}</span>
+                </SelectItem>
+              )}
+              {field.options.map((option) => {
+                const disabled = optionDisabledForConfig(field.definition, option, field.path, config);
+                const label = optionLabel(field.definition, option);
+                return (
+                  <SelectItem
+                    key={`${field.path}-text-option-${String(option)}`}
+                    value={String(option)}
+                    disabled={disabled}
+                    className="font-mono"
+                    title={String(option)}
+                  >
+                    <span className="block max-w-full truncate">{label}</span>
+                  </SelectItem>
+                );
+              })}
+            </SelectContent>
+          </Select>
+        ) : (
+          <Input
+            className="font-mono"
+            value={textValue}
+            onChange={(event) => onChange(event.target.value)}
+          />
+        )
       )}
+      {compatibilityHint && <p className="text-[11px] text-muted-foreground">{compatibilityHint}</p>}
+      {boolReason && <p className="text-[11px] text-muted-foreground">{boolReason}</p>}
       {hint && <p className="text-[11px] text-muted-foreground">{hint}</p>}
     </div>
   );

@@ -15,18 +15,27 @@ import { Textarea } from "../../../components/ui/textarea";
 import type { AgentPageProps } from "../../../pages/types";
 import { getValueByPath, isRecord } from "../../simulation/utils";
 import {
+  applyConfigConstraints,
+  booleanDisabledForConfig,
+  booleanDisableReasonForConfig,
+  agentFieldVisibleForConfig,
   buildAgentConfig,
-  checkDependency,
   coerceFieldValue,
   collectAgentSchemaFields,
+  fieldEmptyMessage,
+  fieldCompatibilityHint,
   formatFieldValue,
-  optionDisabled,
+  inferSftSettingsForDatasetPath,
+  materializeAgentConfigConstraints,
+  optionDisableReasonForConfig,
+  optionDisabledForConfig,
   optionLabel,
   optionMeta,
   setConfigValue,
   validateDisabledOptions,
   type AgentSchemaField,
 } from "../schema";
+import { isModelCompatibleWithDataset } from "../../config/compatibility";
 
 type LocalExperiment = {
   name: string;
@@ -61,6 +70,7 @@ export function AgentPlanPreview(props: AgentPageProps) {
 
   if (!draftPlan) return null;
   const isBusy = globalBusy || isRevising;
+  const lockedConstraints = materializeAgentConfigConstraints(configSchema, draftPlan.config_constraints ?? {});
 
   const handleRevise = async () => {
     if (!instruction.trim() || !draftPlan.job_id) return;
@@ -91,7 +101,19 @@ export function AgentPlanPreview(props: AgentPageProps) {
     setLocalExperiments((current) =>
       current.map((exp, idx) => {
         if (idx !== index) return exp;
-        const nextConfig = setConfigValue(exp.config_patch ?? {}, path, value);
+        let nextConfig = setConfigValue(exp.config_patch ?? {}, path, value);
+        if (path === "dataset.name") {
+          const fullConfig = buildAgentConfig(configSchema, nextConfig);
+          const currentModel = getValueByPath(fullConfig, "model.name");
+          if (!isModelCompatibleWithDataset(currentModel, String(value))) {
+            nextConfig = setConfigValue(nextConfig, "model.name", "Auto");
+          }
+        }
+        if (path === "sft.dataset_path") {
+          for (const [inferredPath, inferredValue] of Object.entries(inferSftSettingsForDatasetPath(value))) {
+            nextConfig = setConfigValue(nextConfig, inferredPath, inferredValue);
+          }
+        }
         return {
           ...exp,
           config_patch: nextConfig,
@@ -126,7 +148,10 @@ export function AgentPlanPreview(props: AgentPageProps) {
     }
 
     const disabledErrors = localExperiments.flatMap((exp) =>
-      validateDisabledOptions(buildAgentConfig(configSchema, exp.config_patch ?? {}), configSchema),
+      validateDisabledOptions(
+        buildAgentConfig(configSchema, applyConfigConstraints(exp.config_patch ?? {}, lockedConstraints)),
+        configSchema,
+      ),
     );
     if (disabledErrors.length > 0) {
       toast.error(disabledErrors[0]);
@@ -135,7 +160,10 @@ export function AgentPlanPreview(props: AgentPageProps) {
 
     const cleanExperiments = localExperiments.map((exp) => {
       const { _rawJsonString, _jsonError, _activeTab, ...rest } = exp;
-      return rest;
+      return {
+        ...rest,
+        config_patch: applyConfigConstraints(rest.config_patch ?? {}, lockedConstraints),
+      };
     });
     void handleExecutePlan(cleanExperiments);
   };
@@ -203,6 +231,7 @@ export function AgentPlanPreview(props: AgentPageProps) {
                 disabled={isBusy}
                 experiment={exp}
                 index={idx}
+                lockedConstraints={lockedConstraints}
                 schema={configSchema}
                 fields={schemaFields}
                 onConfigChange={(path, value) => handleFormConfigChange(idx, path, value)}
@@ -231,6 +260,7 @@ function ExperimentCard({
   experiment,
   fields,
   index,
+  lockedConstraints,
   onConfigChange,
   onJsonChange,
   onTabChange,
@@ -240,22 +270,24 @@ function ExperimentCard({
   experiment: LocalExperiment;
   fields: AgentSchemaField[];
   index: number;
+  lockedConstraints: Record<string, unknown>;
   onConfigChange: (path: string, value: unknown) => void;
   onJsonChange: (text: string) => void;
   onTabChange: (tab: "form" | "json") => void;
   schema: Record<string, unknown> | null;
 }) {
-  const fullConfig = buildAgentConfig(schema, experiment.config_patch ?? {});
-  const visibleFields = fields.filter((field) => checkDependency(fullConfig, field.definition.depends_on));
+  const effectivePatch = applyConfigConstraints(experiment.config_patch ?? {}, lockedConstraints);
+  const fullConfig = buildAgentConfig(schema, effectivePatch);
+  const visibleFields = fields.filter((field) => agentFieldVisibleForConfig(field, fullConfig));
   const grouped = visibleFields.reduce<Record<string, AgentSchemaField[]>>((acc, field) => {
     const section = field.section;
     acc[section] = [...(acc[section] ?? []), field];
     return acc;
   }, {});
-  const jsonString = experiment._rawJsonString ?? JSON.stringify(experiment.config_patch ?? {}, null, 2);
+  const jsonString = experiment._rawJsonString ?? JSON.stringify(effectivePatch, null, 2);
   const disabledErrors = validateDisabledOptions(fullConfig, schema);
   const summaryFields = fields
-    .filter((field) => field.featured)
+    .filter((field) => field.featured && agentFieldVisibleForConfig(field, fullConfig))
     .map((field) => ({ field, value: getValueByPath(fullConfig, field.path) }))
     .filter((item) => item.value !== undefined)
     .slice(0, 8);
@@ -300,6 +332,7 @@ function ExperimentCard({
                     {sectionFields.map((field) => (
                       <SchemaFieldControl
                         key={field.path}
+                        config={fullConfig}
                         disabled={disabled}
                         field={field}
                         value={getValueByPath(fullConfig, field.path) ?? field.defaultValue}
@@ -329,20 +362,34 @@ function ExperimentCard({
 }
 
 function SchemaFieldControl({
+  config,
   disabled,
   field,
   value,
   onChange,
 }: {
+  config: Record<string, unknown>;
   disabled: boolean;
   field: AgentSchemaField;
   value: unknown;
   onChange: (value: unknown) => void;
 }) {
+  const compatibilityHint = fieldCompatibilityHint(field.path, config);
+  const boolDisabled = disabled || booleanDisabledForConfig(field.path, value, config);
+  const boolReason = booleanDisableReasonForConfig(field.path, value, config);
+  const textOptions = field.options.map((option) => String(option));
+  const textValue = formatFieldValue(value);
+  const selectedTextOption = textOptions.includes(textValue) ? textValue : "";
+  const customTextOption = textValue !== "-" && selectedTextOption === "" ? textValue : null;
+  const emptyMessage = field.options.length === 0 ? fieldEmptyMessage(field) : null;
+
   return (
     <div className="space-y-1 rounded-md border border-border/70 bg-background/60 p-2">
       <p className="text-xs text-muted-foreground">{field.label}</p>
       {field.type === "select" && (
+        emptyMessage ? (
+          <Input className="font-mono text-muted-foreground" disabled value={emptyMessage} />
+        ) : (
         <Select value={String(value ?? "")} onValueChange={onChange} disabled={disabled}>
           <SelectTrigger className="font-mono">
             <SelectValue placeholder="Select option" />
@@ -350,22 +397,28 @@ function SchemaFieldControl({
           <SelectContent>
             {field.options.map((option) => {
               const meta = optionMeta(field.definition, option);
+              const optionDisabled = optionDisabledForConfig(field.definition, option, field.path, config);
+              const reason = optionDisableReasonForConfig(field.definition, option, field.path, config);
               return (
                 <SelectItem
                   key={`${field.path}-${String(option)}`}
                   value={String(option)}
-                  disabled={optionDisabled(field.definition, option)}
+                  disabled={optionDisabled}
                   className="font-mono"
                 >
-                  <span className="flex items-center gap-2">
-                    {optionLabel(field.definition, option)}
-                    {typeof meta.badge === "string" && <span className="text-[10px] text-amber-400">{meta.badge}</span>}
+                  <span className="flex flex-col gap-0.5">
+                    <span className="flex items-center gap-2">
+                      {optionLabel(field.definition, option)}
+                      {typeof meta.badge === "string" && <span className="text-[10px] text-amber-400">{meta.badge}</span>}
+                    </span>
+                    {reason && <span className="text-[10px] text-muted-foreground">{reason}</span>}
                   </span>
                 </SelectItem>
               );
             })}
           </SelectContent>
         </Select>
+        )
       )}
       {field.type === "number" && (
         <NumberStepper
@@ -381,17 +434,58 @@ function SchemaFieldControl({
       {field.type === "bool" && (
         <div className="flex h-10 items-center justify-between rounded-md border border-input bg-background/40 px-3">
           <span className="text-sm">{formatFieldValue(value)}</span>
-          <Switch checked={Boolean(value)} onCheckedChange={onChange} disabled={disabled} />
+          <Switch checked={Boolean(value)} onCheckedChange={onChange} disabled={boolDisabled} />
         </div>
       )}
       {field.type !== "select" && field.type !== "number" && field.type !== "bool" && (
-        <Input
-          className="font-mono"
-          disabled={disabled}
-          value={formatFieldValue(value)}
-          onChange={(event) => onChange(event.target.value)}
-        />
+        emptyMessage ? (
+          <Input className="font-mono text-muted-foreground" disabled value={emptyMessage} />
+        ) : textOptions.length > 0 ? (
+          <Select value={customTextOption ?? selectedTextOption} onValueChange={onChange} disabled={disabled}>
+            <SelectTrigger
+              className="font-mono overflow-hidden [&>span]:block [&>span]:truncate [&>span]:whitespace-nowrap"
+              title={textValue}
+            >
+              <SelectValue placeholder="Choose option" />
+            </SelectTrigger>
+            <SelectContent className="max-w-[min(36rem,calc(100vw-2rem))]">
+              {customTextOption && (
+                <SelectItem
+                  value={customTextOption}
+                  className="font-mono"
+                  title={customTextOption}
+                >
+                  <span className="block max-w-full truncate">{customTextOption}</span>
+                </SelectItem>
+              )}
+              {field.options.map((option) => {
+                const itemDisabled = optionDisabledForConfig(field.definition, option, field.path, config);
+                const label = optionLabel(field.definition, option);
+                return (
+                  <SelectItem
+                    key={`${field.path}-text-option-${String(option)}`}
+                    value={String(option)}
+                    disabled={itemDisabled}
+                    className="font-mono"
+                    title={String(option)}
+                  >
+                    <span className="block max-w-full truncate">{label}</span>
+                  </SelectItem>
+                );
+              })}
+            </SelectContent>
+          </Select>
+        ) : (
+          <Input
+            className="font-mono"
+            disabled={disabled}
+            value={textValue}
+            onChange={(event) => onChange(event.target.value)}
+          />
+        )
       )}
+      {compatibilityHint && <p className="text-[11px] text-muted-foreground">{compatibilityHint}</p>}
+      {boolReason && <p className="text-[11px] text-muted-foreground">{boolReason}</p>}
     </div>
   );
 }

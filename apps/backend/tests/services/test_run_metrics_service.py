@@ -1,0 +1,41 @@
+from __future__ import annotations
+
+from app.services.simulation.run_metrics_service import SimulationRunMetricsService
+
+
+def test_normalize_metrics_payload_preserves_llm_sections():
+    service = SimulationRunMetricsService.__new__(SimulationRunMetricsService)
+
+    normalized = service._normalize_metrics_payload(
+        {
+            "llm_results": {
+                "rounds": [1, "2"],
+                "train_loss": [1.5],
+                "validation_loss": [1.2],
+                "perplexity": [3.32],
+                "token_throughput": [42],
+                "adapter_size_bytes": [1024],
+            },
+            "llm_dataset": {"num_records": 12},
+            "llm_evaluation": {"enabled": True, "num_records": 4},
+            "llm_runtime": {"status": "blocked"},
+            "llm_artifacts": [{"round": 1, "path": "adapter.pt"}, "not-an-object"],
+            "client_results": {
+                "client_0": {
+                    "rounds": [1, "3"],
+                    "train_loss": [1.0, 0.8],
+                    "train_acc": [],
+                    "test_loss": [],
+                    "test_acc": [],
+                }
+            },
+        }
+    )
+
+    assert normalized["llm_results"]["rounds"] == [1, 2]
+    assert normalized["llm_results"]["token_throughput"] == [42.0]
+    assert normalized["llm_dataset"]["num_records"] == 12
+    assert normalized["llm_evaluation"]["num_records"] == 4
+    assert normalized["llm_runtime"]["status"] == "blocked"
+    assert normalized["llm_artifacts"] == [{"round": 1, "path": "adapter.pt"}]
+    assert normalized["client_results"]["client_0"]["rounds"] == [1, 3]

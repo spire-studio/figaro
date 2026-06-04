@@ -22,7 +22,41 @@ def test_agent_config_schema_endpoint_returns_ui_metadata(client):
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["model"]["name"]["options"] == ["CNN", "LeNet", "ResNet"]
+    assert "Auto" in payload["model"]["name"]["options"]
+    assert "FedAvgCNN" in payload["model"]["name"]["options"]
+    assert "TextDNN" in payload["model"]["name"]["options"]
+    assert "CharLSTM" in payload["model"]["name"]["options"]
+    llm_task_ui = payload["task"]["type"]["ui"]["options"]["llm_peft_sft"]
+    assert llm_task_ui["badge"] == "simulation"
+    assert "disabled" not in llm_task_ui
+    assert payload["llm"]["base_model"]["type"] == "text"
+    assert "Qwen/Qwen2.5-0.5B-Instruct" not in payload["llm"]["base_model"]["options"]
+    if payload["llm"]["base_model"]["options"]:
+        assert payload["llm"]["base_model"]["default"] in payload["llm"]["base_model"]["options"]
+    else:
+        assert payload["llm"]["base_model"]["default"] == ""
+        assert payload["llm"]["base_model"]["ui"]["empty_message"] == "No local models found"
+    assert payload["llm"]["base_model"]["ui"]["option_source"]["path"] == "./models/llm"
+    if payload["sft"]["dataset_path"]["options"]:
+        assert payload["sft"]["dataset_path"]["default"] in payload["sft"]["dataset_path"]["options"]
+    else:
+        assert payload["sft"]["dataset_path"]["default"] == ""
+        assert payload["sft"]["dataset_path"]["ui"]["empty_message"] == "No training datasets found"
+    assert payload["sft"]["dataset_path"]["ui"]["option_source"]["path"] == "./datasets/llm"
+    assert payload["sft"]["file_format"]["options"] == ["auto", "jsonl", "parquet"]
+    assert payload["sft"]["validation_split"]["default"] == 0.0
+    assert "alpaca" in payload["sft"]["format"]["options"]
+    if payload["evaluation"]["dataset_path"]["options"]:
+        if payload["evaluation"]["dataset_path"]["default"]:
+            assert payload["evaluation"]["dataset_path"]["default"] in payload["evaluation"]["dataset_path"]["options"]
+            assert payload["evaluation"]["enable"]["default"] is True
+        else:
+            assert payload["evaluation"]["enable"]["default"] is False
+    else:
+        assert payload["evaluation"]["dataset_path"]["default"] == ""
+        assert payload["evaluation"]["dataset_path"]["ui"]["empty_message"] == "No evaluation datasets found"
+        assert payload["evaluation"]["enable"]["default"] is False
+    assert payload["evaluation"]["dataset_path"]["ui"]["option_source"]["path"] == "./datasets/llm"
     aggregation_ui = payload["federated"]["aggregation"]["ui"]
     assert aggregation_ui["featured"] is True
     assert aggregation_ui["options"]["fedprox"]["disabled"] is True
@@ -367,7 +401,7 @@ def test_agent_optimization_jobs_history_endpoints(client, monkeypatch):
         def __init__(self, _session):
             self._session = _session
 
-        async def list_jobs(self):
+        async def list_jobs(self, **_filters):
             return [history_job]
 
         async def get_job_or_raise(self, optimization_job_id):
@@ -390,3 +424,104 @@ def test_agent_optimization_jobs_history_endpoints(client, monkeypatch):
     assert detail_payload["optimization_job_id"] == 7
     assert detail_payload["job_name"] == "cifar10-alpha-sweep"
     assert detail_payload["resolved_objective"] == "accuracy"
+
+
+def test_agent_optimization_jobs_history_filters_are_forwarded(client, monkeypatch):
+    import app.api.v1.endpoints.agent as agent_module
+
+    captured = {}
+
+    class _FakeHistoryService:
+        def __init__(self, _session):
+            self._session = _session
+
+        async def list_jobs(self, **filters):
+            captured.update(filters)
+            return []
+
+    monkeypatch.setattr(agent_module, "AgentOptimizationHistoryService", _FakeHistoryService)
+
+    response = client.get(
+        "/api/v1/agent/optimization-jobs"
+        "?status=completed"
+        "&q=cifar"
+        "&model_name=gpt-test"
+        "&objective=accuracy"
+        "&best_score_min=0.8"
+        "&best_score_max=0.95"
+        "&dataset=CIFAR-10"
+        "&config_model=FedAvgCNN"
+        "&aggregation=fedavg"
+        "&num_clients=3"
+        "&num_rounds=10"
+    )
+
+    assert response.status_code == 200
+    assert captured["status"] == "completed"
+    assert captured["q"] == "cifar"
+    assert captured["model_name"] == "gpt-test"
+    assert captured["objective"] == "accuracy"
+    assert captured["best_score_min"] == 0.8
+    assert captured["best_score_max"] == 0.95
+    assert captured["config_filters"] == {
+        "dataset.name": "CIFAR-10",
+        "model.name": "FedAvgCNN",
+        "federated.aggregation": "fedavg",
+        "federated.num_clients": 3,
+        "federated.num_rounds": 10,
+    }
+
+
+def test_agent_config_version_endpoints(client, monkeypatch):
+    import app.api.v1.endpoints.agent as agent_module
+
+    now = datetime.now(timezone.utc)
+    version = SimpleNamespace(
+        id=3,
+        optimization_job_id=7,
+        run_id="run-1",
+        iteration=1,
+        source="experiment",
+        label="alpha 0.1",
+        config_hash="abc123",
+        config_json={"dataset": {"alpha": 0.1}},
+        diff_json=[
+            {
+                "path": "dataset.alpha",
+                "change_type": "updated",
+                "old_value": 0.5,
+                "new_value": 0.1,
+            }
+        ],
+        created_at=now,
+    )
+
+    class _FakeHistoryService:
+        def __init__(self, _session):
+            self._session = _session
+
+        async def list_config_versions(self, optimization_job_id):
+            assert optimization_job_id == 7
+            return [version]
+
+        async def diff_config_versions(self, *, optimization_job_id, from_version_id, to_version_id):
+            assert optimization_job_id == 7
+            assert from_version_id is None
+            assert to_version_id == 3
+            return version.diff_json
+
+    monkeypatch.setattr(agent_module, "AgentOptimizationHistoryService", _FakeHistoryService)
+
+    versions_response = client.get("/api/v1/agent/optimization-jobs/7/config-versions")
+    assert versions_response.status_code == 200
+    versions_payload = versions_response.json()
+    assert versions_payload[0]["id"] == 3
+    assert versions_payload[0]["label"] == "alpha 0.1"
+    assert versions_payload[0]["diff_json"][0]["path"] == "dataset.alpha"
+
+    diff_response = client.get("/api/v1/agent/optimization-jobs/7/config-diff?to_version_id=3")
+    assert diff_response.status_code == 200
+    diff_payload = diff_response.json()
+    assert diff_payload["optimization_job_id"] == 7
+    assert diff_payload["to_version_id"] == 3
+    assert diff_payload["changes"][0]["new_value"] == 0.1

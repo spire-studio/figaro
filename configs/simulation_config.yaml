@@ -1,3 +1,5 @@
+task:
+  type: classic_fl
 dataset:
   name: CIFAR-10
   data_dir: ./datasets
@@ -5,11 +7,11 @@ dataset:
   alpha: 0.5
   num_clients: 3
 model:
-  name: CNN
+  name: Auto
   input_shape:
-  - 32
-  - 32
   - 3
+  - 32
+  - 32
   num_classes: 10
 federated:
   num_rounds: 10
@@ -22,11 +24,21 @@ federated:
 compression:
   sparsification:
     enable: false
+    method: global_topk
     ratio: 0.5
+    threshold: 0.001
 privacy:
   homomorphic_encryption:
     enable: false
+    method: ckks
     poly_modulus_degree: 8192
+  differential_privacy:
+    enable: false
+    clipping_norm: 1.0
+    noise_multiplier: 0.0
+  secure_aggregation:
+    enable: false
+    mask_std: 1.0
 system:
   mode: simulation
   node_role: server

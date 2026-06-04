@@ -48,7 +48,12 @@ def build_plan_prompt(
         f"Default base config after applying user constraints:\n{dumps_for_prompt(base_config)}\n\n"
         f"User-selected structured constraints:\n{dumps_for_prompt(constraints)}\n\n"
         "Parse the request into experiment configurations.\n"
-        "Every experiment must inherit the structured constraints unless the user's request explicitly changes them.\n"
+        "User-selected structured constraints are locked controls and have higher priority than natural-language text.\n"
+        "Every experiment must inherit the structured constraints. If text conflicts with them, keep the structured constraints.\n"
         "Use executable_options for select fields. Do not use disabled_options.\n"
+        "For LLM PEFT simulation requests, set task.type=\"llm_peft_sft\" and use llm/sft/peft/federated fields.\n"
+        "For LLM validation or perplexity requests, set evaluation.enable=true and include evaluation.dataset_path when available.\n"
+        "Respect dataset_model_compatibility. Use model.name=\"Auto\" when the user changes dataset without naming a model.\n"
+        "Respect privacy/compression compatibility rules from Runtime capabilities.\n"
         "Return ONLY a JSON object with plan_summary and experiments list, no commentary."
     )

@@ -19,10 +19,61 @@ def get_last_global_accuracy(metrics: dict[str, Any]) -> float | None:
     return float(last) if isinstance(last, (int, float)) else None
 
 
+def get_last_llm_train_loss(metrics: dict[str, Any]) -> float | None:
+    """Extract the final LLM train loss from run metrics."""
+    llm_results = metrics.get("llm_results") or {}
+    train_loss = llm_results.get("train_loss") or []
+    if not train_loss:
+        return None
+    last = train_loss[-1]
+    return float(last) if isinstance(last, (int, float)) else None
+
+
+def get_last_llm_validation_loss(metrics: dict[str, Any]) -> float | None:
+    """Extract the final non-zero LLM validation loss from run metrics."""
+    llm_results = metrics.get("llm_results") or {}
+    validation_loss = llm_results.get("validation_loss") or []
+    for value in reversed(validation_loss):
+        if isinstance(value, (int, float)) and float(value) > 0:
+            return float(value)
+    return None
+
+
+def get_last_llm_loss(metrics: dict[str, Any]) -> float | None:
+    """Return validation loss when present, otherwise train loss."""
+    return get_last_llm_validation_loss(metrics) or get_last_llm_train_loss(metrics)
+
+
+def get_agent_run_score(metrics: dict[str, Any]) -> float | None:
+    """Return the comparable score used by Agent result ranking.
+
+    Classic FL keeps higher-is-better accuracy. LLM PEFT uses negative loss
+    so lower loss ranks higher while preserving the same max() flow.
+    """
+    llm_loss = get_last_llm_loss(metrics)
+    if llm_loss is not None:
+        return -llm_loss
+    return get_last_global_accuracy(metrics)
+
+
 def _format_score(value: float | None) -> str:
     if value is None:
         return "-"
     return f"{value:.4f}"
+
+
+def _is_llm_record(record: ExperimentRecord) -> bool:
+    return get_last_llm_loss(record.metrics) is not None
+
+
+def _format_record_metric(record: ExperimentRecord) -> str:
+    validation_loss = get_last_llm_validation_loss(record.metrics)
+    if validation_loss is not None:
+        return f"val_loss={validation_loss:.4f}"
+    llm_loss = get_last_llm_train_loss(record.metrics)
+    if llm_loss is not None:
+        return f"train_loss={llm_loss:.4f}"
+    return _format_score(record.score)
 
 
 def _get_federated_summary(config: dict[str, Any]) -> str:
@@ -49,15 +100,17 @@ def build_results_table(state: AgentState) -> str:
         return "No experiment results available."
 
     lines: list[str] = []
-    header = f"{'Name':<30} {'Accuracy':<12} {'Rounds':<8} {'Config Summary'}"
+    metric_header = "Metric" if any(_is_llm_record(record) for record in state.experiment_results) else "Accuracy"
+    header = f"{'Name':<30} {metric_header:<12} {'Rounds':<8} {'Config Summary'}"
     lines.append(header)
     lines.append("-" * len(header))
 
     for record in state.experiment_results:
         name = record.name or f"exp-{record.iteration}"
-        score = _format_score(record.score)
+        score = _format_record_metric(record)
         global_results = record.metrics.get("global_results") or {}
-        rounds = len(global_results.get("rounds") or [])
+        llm_results = record.metrics.get("llm_results") or {}
+        rounds = len((llm_results.get("rounds") if isinstance(llm_results, dict) else None) or global_results.get("rounds") or [])
         config_summary = _get_federated_summary(record.config)
         lines.append(f"{name:<30} {score:<12} {rounds:<8} {config_summary}")
 
@@ -78,12 +131,20 @@ def build_summary_text(*, state: AgentState) -> str:
     if scored:
         best = max(scored, key=lambda r: r.score)  # type: ignore[arg-type]
         worst = min(scored, key=lambda r: r.score)  # type: ignore[arg-type]
-        lines.append(
-            f"Best accuracy: {_format_score(best.score)} ({best.name or f'exp-{best.iteration}'})"
-        )
-        lines.append(
-            f"Worst accuracy: {_format_score(worst.score)} ({worst.name or f'exp-{worst.iteration}'})"
-        )
+        if any(_is_llm_record(record) for record in scored):
+            lines.append(
+                f"Best LLM loss: {_format_record_metric(best)} ({best.name or f'exp-{best.iteration}'})"
+            )
+            lines.append(
+                f"Worst LLM loss: {_format_record_metric(worst)} ({worst.name or f'exp-{worst.iteration}'})"
+            )
+        else:
+            lines.append(
+                f"Best accuracy: {_format_score(best.score)} ({best.name or f'exp-{best.iteration}'})"
+            )
+            lines.append(
+                f"Worst accuracy: {_format_score(worst.score)} ({worst.name or f'exp-{worst.iteration}'})"
+            )
 
     lines.append("")
     lines.append(build_results_table(state))

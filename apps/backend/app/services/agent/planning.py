@@ -48,8 +48,9 @@ def build_initial_config(schema: dict[str, Any]) -> dict[str, Any]:
     """
     if not schema:
         return {
+            "task": {"type": "classic_fl"},
             "dataset": {"name": "CIFAR-10", "distribution": "non_iid", "alpha": 0.5},
-            "model": {"name": "CNN"},
+            "model": {"name": "Auto"},
             "federated": {
                 "num_clients": 3,
                 "num_rounds": 10,
@@ -86,6 +87,77 @@ def deep_merge_config(base: dict[str, Any], override: dict[str, Any] | None) -> 
         else:
             merged[key] = copy.deepcopy(value)
     return merged
+
+
+def lock_structured_constraints(config: dict[str, Any], constraints: dict[str, Any] | None) -> dict[str, Any]:
+    """Apply user-selected structured constraints as final locked values."""
+    if not isinstance(constraints, dict) or not constraints:
+        return copy.deepcopy(config)
+    return deep_merge_config(config, constraints)
+
+
+def infer_sft_settings_for_dataset_path(dataset_path: str) -> dict[str, str]:
+    """Infer hidden SFT format selectors from a concrete dataset path."""
+    normalized = dataset_path.strip().lower()
+    if normalized.endswith(".jsonl"):
+        file_format = "jsonl"
+    elif normalized.endswith(".parquet"):
+        file_format = "parquet"
+    else:
+        file_format = "auto"
+
+    if "alpaca" in normalized:
+        data_format = "alpaca"
+    elif "messages" in normalized or "chat" in normalized:
+        data_format = "messages"
+    else:
+        data_format = "prompt_completion"
+
+    return {"file_format": file_format, "format": data_format}
+
+
+def llm_resource_constraints_from_config(config: dict[str, Any]) -> dict[str, Any]:
+    """Lock concrete LLM PEFT resources from the effective base config."""
+    task = config.get("task")
+    if not isinstance(task, dict) or task.get("type") != "llm_peft_sft":
+        return {}
+
+    constraints: dict[str, Any] = {"task": {"type": "llm_peft_sft"}}
+    llm = config.get("llm")
+    if isinstance(llm, dict) and isinstance(llm.get("base_model"), str) and llm["base_model"].strip():
+        constraints["llm"] = {"base_model": llm["base_model"]}
+
+    sft = config.get("sft")
+    if isinstance(sft, dict) and isinstance(sft.get("dataset_path"), str) and sft["dataset_path"].strip():
+        constraints["sft"] = {
+            "dataset_path": sft["dataset_path"],
+            **infer_sft_settings_for_dataset_path(sft["dataset_path"]),
+        }
+
+    evaluation = config.get("evaluation")
+    if isinstance(evaluation, dict):
+        evaluation_constraints: dict[str, Any] = {}
+        if isinstance(evaluation.get("enable"), bool):
+            evaluation_constraints["enable"] = evaluation["enable"]
+        if (
+            evaluation.get("enable") is True
+            and isinstance(evaluation.get("dataset_path"), str)
+            and evaluation["dataset_path"].strip()
+        ):
+            evaluation_constraints["dataset_path"] = evaluation["dataset_path"]
+        if evaluation_constraints:
+            constraints["evaluation"] = evaluation_constraints
+
+    return constraints
+
+
+def merge_llm_resource_constraints(
+    config: dict[str, Any],
+    constraints: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Merge effective LLM resource defaults with explicit user constraints."""
+    resource_constraints = llm_resource_constraints_from_config(config)
+    return deep_merge_config(resource_constraints, constraints or {})
 
 
 def _option_ui(definition: dict[str, Any]) -> dict[str, Any]:

@@ -136,6 +136,21 @@ cd apps/frontend && pnpm install && pnpm dev
 - Frontend: `http://localhost:5173`
 - Backend API: `http://localhost:8000/docs`
 
+### LLM PEFT smoke run
+
+The LLM PEFT smoke config uses a tiny local Hugging Face-compatible model so it can run without downloading a base model. Generate it once before selecting `configs/smoke/llm_peft_simulation.yaml` in the Simulation UI:
+
+```bash
+uv run python scripts/create_tiny_llm_fixture.py
+```
+
+For a direct PowerShell smoke run:
+
+```powershell
+$env:PYTHONPATH="libs;apps/backend/runners"
+uv run python -c "from pathlib import Path; from runtime_dispatcher import run_runtime; raise SystemExit(0 if run_runtime(Path('configs/smoke/llm_peft_simulation.yaml')) else 1)"
+```
+
 ### Distributed deployment
 
 ```bash
@@ -194,8 +209,12 @@ figaro/
 │   ├── models/               # CNN / ResNet
 │   ├── data/                 # Data loading & partitioning
 │   ├── privacy/              # CKKS encryption
-│   └── compression/          # Top-K sparsification
+│   ├── compression/          # Top-K sparsification
+│   └── llm/                  # LLM PEFT runtime utilities
 ├── configs/                  # Experiment configs
+├── datasets/llm/             # Local LLM SFT/evaluation JSONL files
+├── models/llm/               # Local Hugging Face-compatible LLM directories
+├── skill/                    # Local operational skill guides
 ├── scripts/                  # Docker deployment scripts
 └── .github/workflows/        # CI pipelines
 ```
@@ -210,14 +229,16 @@ PRs welcome! Figaro is meant to be a readable, research-friendly FL platform.
 - [x] **Interactive Agent Planning** — Multi-turn dialogue support for refining experiments, plus visual topology previews (Plan Preview) before execution.
 - [x] **Execution Transparency** — Real-time tracking of node-level status during execution and automated natural-language interpretation of results.
 - [x] **Strict Configuration Engine** — Implement strict Pydantic/JSON Schema validation to resolve historical inconsistencies between `config_schema` and underlying algorithms.
-- [ ] **Advanced Experiment Tracking** — Multi-dimensional search filtering (by metrics, hyperparameters, status) and configuration version control (diffing).
+- [x] **Advanced Experiment Tracking** — Multi-dimensional search filtering (by metrics, hyperparameters, status) and configuration version control (diffing).
 
-**Phase 2: LLM & LoRA Federated Fine-Tuning**
-- [ ] **Native LLM Ecosystem Integration** — Seamless Hugging Face model loading (e.g., Llama 3, Qwen) and efficient parsing of JSONL instruction-tuning datasets.
-- [ ] **Parameter-Efficient Runtime** — Deep integration with LoRA/PEFT, including support for QLoRA (4-bit/8-bit quantization) to lower client-side memory barriers.
-- [ ] **Specialized Adapter Aggregation** — Custom aggregation mechanisms for LoRA adapters, exploring support for heterogeneous LoRA ranks across clients.
-- [ ] **LLM Evaluation Metrics** — Built-in evaluation for generative tasks (Rouge, BLEU, Perplexity) and automated LLM-as-a-Judge capabilities.
-- [ ] **Hardware Guardrails** — Pre-run dynamic GPU memory estimation (OOM prevention) and automated tuning of gradient accumulation and checkpointing.
+**Phase 2: LLM Federated PEFT Fine-Tuning**
+- [x] **Simulation LoRA/PEFT SFT Route** — `task.type=llm_peft_sft` dispatches to a dedicated single-machine simulation runtime that loads a Hugging Face or local causal LM, applies LoRA adapters, and runs per-client supervised fine-tuning from JSONL data.
+- [x] **LLM/PEFT Configuration Surface** — `config_schema` and runtime normalization now cover base model, tokenizer, max sequence length, precision, SFT dataset path/format, prompt template, LoRA hyperparameters, target modules, quantization mode, and adapter resume path.
+- [x] **JSONL SFT Data Pipeline** — Supports prompt/completion and chat messages JSONL formats, deterministic client splitting, and prompt rendering for plain/chat-style templates.
+- [x] **Adapter-Only Federated Aggregation** — Aggregates LoRA/PEFT adapter tensors by client example count, persists global adapter artifacts, records SHA-256 lineage, and supports warm-starting from a previous global adapter.
+- [x] **LLM Runtime Dependencies & Metrics** — Core project dependencies include `transformers`, `peft`, `accelerate`, `safetensors`, and `bitsandbytes`; backend metrics include train loss, perplexity, token throughput, adapter size, runtime status, dataset summary, and adapter artifact lineage.
+- [x] **Frontend & Agent UX for LLM Runs** — Exposes the LLM route in the schema-driven Simulation and Agent planning flows, with task-aware field visibility, LLM-specific metric charts, local model/dataset selection, and Adapter Lineage artifact views.
+- [x] **Evaluation Harness** — Adds validation JSONL configuration, per-round evaluation loss/perplexity calculation after global adapter aggregation, normalized evaluation metrics, and a generated tiny-model smoke config for LLM PEFT runs.
 
 **Phase 3: Enterprise & Team Collaboration**
 - [ ] **Multi-Tenant Workspaces** — Isolated project environments with Role-Based Access Control (RBAC) and comprehensive audit logging.

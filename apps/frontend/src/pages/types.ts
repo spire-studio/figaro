@@ -10,6 +10,7 @@ import type {
 import type { DistributedClient, DistributedJob, DistributedSession, DistributedSessionProgress } from "../api/distributed";
 import type {
   AgentExperimentResponse,
+  AgentHistoryFilters,
   AgentOptimizationJobSummary,
   AgentOptimizeProgressResponse,
   AgentOptimizeResponse,
@@ -58,7 +59,7 @@ export type LineSeries = {
   key: string;
   label: string;
   color: string;
-  values: number[];
+  values: Array<number | null | undefined>;
 };
 
 export type MiniLineChartProps = {
@@ -66,6 +67,7 @@ export type MiniLineChartProps = {
   xValues: number[];
   series: LineSeries[];
   formatter?: (value: number) => string;
+  emptyMessage?: string;
 };
 
 export type SimulationPageProps = {
@@ -134,6 +136,7 @@ export type SimulationPageProps = {
   requestDeleteJob: (job: Job) => void;
   runLogs: RunLog[];
   runLogsRef: RefObject<HTMLDivElement | null>;
+  runMetrics: RunMetrics;
   runRounds: number[];
   runStatusVariant: Record<string, BadgeVariant>;
   runs: Run[];
@@ -241,6 +244,7 @@ export type AgentPageProps = {
   experimentRuns: AgentRunResponse[];
   goal: string;
   handleOptimize: () => Promise<void>;
+  historyFilters: AgentHistoryFilters;
   historyJobs: AgentOptimizationJobSummary[];
   jobName: string;
   lastSubmittedGoal: string | null;
@@ -257,6 +261,8 @@ export type AgentPageProps = {
   selectedHistoryJobId: number | null;
   selectExperiment: (experimentId: number) => Promise<void>;
   selectHistoryJob: (optimizationJobId: number) => Promise<void>;
+  refreshHistoryJobs: (filters?: AgentHistoryFilters) => Promise<void>;
+  refreshLlmResources: () => Promise<void>;
   setConfigConstraint: (path: string, value: unknown) => void;
   clearConfigConstraint: (path: string) => void;
   setGoal: Dispatch<SetStateAction<string>>;
@@ -264,6 +270,7 @@ export type AgentPageProps = {
   setMaxIterations: Dispatch<SetStateAction<number>>;
   setModelName: Dispatch<SetStateAction<string>>;
   setObjective: Dispatch<SetStateAction<AgentOptimizationObjective>>;
+  setHistoryFilters: Dispatch<SetStateAction<AgentHistoryFilters>>;
   workflowStep: AgentWorkflowStep;
   setWorkflowStep: Dispatch<SetStateAction<AgentWorkflowStep>>;
   draftPlan: AgentPlanDraft | null;

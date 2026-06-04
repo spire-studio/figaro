@@ -15,6 +15,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core import exceptions
 from app.models.simulation import SimulationJob, SimulationJobStatus, SimulationRunStatus
 from app.repositories.simulation import SimulationJobRepository, SimulationRunRepository
+from app.services.llm_resources import augment_config_schema_with_llm_resources
+from app.services.simulation.compatibility import canonicalize_runtime_config, validate_runtime_config_or_raise
 
 
 class SimulationJobService:
@@ -192,7 +194,7 @@ class SimulationJobService:
         loaded = yaml.safe_load(schema_path.read_text(encoding="utf-8"))
         if not isinstance(loaded, dict):
             raise exceptions.InternalServiceError("Config schema must be a YAML object.")
-        return loaded
+        return augment_config_schema_with_llm_resources(loaded, cls._project_root())
 
     @classmethod
     def normalize_simulation_config(cls, config: dict[str, Any]) -> dict[str, Any]:
@@ -230,7 +232,9 @@ class SimulationJobService:
         system["mode"] = "simulation"
         system["node_role"] = "server"
 
+        canonicalize_runtime_config(merged)
         cls._validate_config_node(merged, schema, path_prefix="")
+        validate_runtime_config_or_raise(merged)
         return merged
 
     @classmethod
@@ -349,6 +353,12 @@ class SimulationJobService:
             self._project_root() / "config" / "runs" / f"{run_id}.json",
             self._project_root() / "results" / f"live_results_{run_id}.json",
         ]
+        candidates.extend((self._project_root() / "configs" / "simulation_runs").glob(f"{run_id}*.json"))
+        candidates.extend((self._project_root() / "configs" / "simulation_runs").glob(f"*_{run_id}.json"))
+        candidates.extend((self._project_root() / "results").glob(f"live_results_{run_id}*.json"))
+        candidates.extend((self._project_root() / "results").glob(f"*_{run_id}_live_results.json"))
+        candidates.extend((self._project_root() / "logs" / "simulation_runs").glob(f"{run_id}*_server.log"))
+        candidates.extend((self._project_root() / "logs" / "simulation_runs").glob(f"*_{run_id}_server.log"))
         for path in candidates:
             try:
                 if path.exists() and path.is_file():

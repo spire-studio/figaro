@@ -1,11 +1,35 @@
+task:
+  role: "server"
+  ui:
+    label: "Task"
+    group: "Core"
+  type:
+    type: "select"
+    options: ["classic_fl", "llm_peft_sft"]
+    default: "classic_fl"
+    ui:
+      label: "Training route"
+      featured: true
+      group: "Core"
+      prompt_hint: "Choose the runtime family for this experiment."
+      options:
+        classic_fl:
+          label: "Classic FL"
+          description: "Executable runtime for the current CNN/ResNet/TextCNN-style federated experiments."
+        llm_peft_sft:
+          label: "LLM PEFT SFT"
+          badge: "simulation"
+          description: "Executable simulation route for federated LoRA/PEFT supervised fine-tuning."
+
 dataset:
   role: "server"
+  depends_on: "task.type == classic_fl"
   ui:
     label: "Dataset"
     group: "Data"
   name:
     type: "select"
-    options: ["CIFAR-10", "CIFAR-100", "MNIST", "Fashion-MNIST"]
+    options: ["MNIST", "EMNIST", "FEMNIST", "Fashion-MNIST", "CIFAR-10", "CIFAR-100", "AG News", "Sogou News", "Tiny-ImageNet", "Country211", "Flowers102", "GTSRB", "Shakespeare", "Stanford Cars", "COVIDx", "Kvasir"]
     default: "CIFAR-10"
     ui:
       label: "Dataset"
@@ -50,13 +74,14 @@ dataset:
 
 model:
   role: "server"
+  depends_on: "task.type == classic_fl"
   ui:
     label: "Model"
     group: "Model"
   name:
     type: "select"
-    options: ["CNN", "LeNet", "ResNet"]
-    default: "CNN"
+    options: ["Auto", "Mclr_Logistic", "LeNet", "DNN", "FedAvgCNN", "ResNet18", "ResNet34", "ResNet50", "AlexNet", "MobileNet", "GoogleNet", "TextLogistic", "TextDNN", "TextCNN", "CharLSTM"]
+    default: "Auto"
     ui:
       label: "Model"
       featured: true
@@ -64,7 +89,7 @@ model:
       prompt_hint: "Neural network architecture for every client."
   input_shape:
     type: "list_int"
-    default: [32, 32, 3]
+    default: [3, 32, 32]
     ui:
       label: "Input shape"
   num_classes:
@@ -72,6 +97,245 @@ model:
     default: 10
     ui:
       label: "Number of classes"
+
+llm:
+  role: "server"
+  depends_on: "task.type == llm_peft_sft"
+  ui:
+    label: "LLM"
+    group: "LLM PEFT"
+  base_model:
+    type: "text"
+    options: []
+    default: ""
+    ui:
+      label: "Base model"
+      featured: true
+      group: "LLM PEFT"
+      prompt_hint: "Hugging Face model id or a local model directory under ./models/llm."
+      empty_message: "No local models found"
+  tokenizer:
+    type: "text"
+    default: "auto"
+    ui:
+      label: "Tokenizer"
+      prompt_hint: "Use 'auto' to load the tokenizer from the base model."
+  max_seq_length:
+    type: "number"
+    min: 128
+    max: 8192
+    default: 1024
+    ui:
+      label: "Max sequence length"
+      featured: true
+      group: "LLM PEFT"
+  precision:
+    type: "select"
+    options: ["fp32", "fp16", "bf16"]
+    default: "bf16"
+    ui:
+      label: "Precision"
+      options:
+        fp32:
+          label: "FP32"
+        fp16:
+          label: "FP16"
+        bf16:
+          label: "BF16"
+
+sft:
+  role: "server"
+  depends_on: "task.type == llm_peft_sft"
+  ui:
+    label: "SFT Dataset"
+    group: "LLM PEFT"
+  dataset_path:
+    type: "text"
+    options: []
+    default: ""
+    ui:
+      label: "Dataset path"
+      featured: true
+      group: "LLM PEFT"
+      prompt_hint: "Training JSONL file, standalone Parquet file, or dataset directory under ./datasets/llm."
+      empty_message: "No training datasets found"
+  file_format:
+    type: "select"
+    options: ["auto", "jsonl", "parquet"]
+    default: "auto"
+    hidden: true
+    ui:
+      label: "File format"
+      group: "LLM PEFT"
+      options:
+        auto:
+          label: "Auto"
+        jsonl:
+          label: "JSONL"
+        parquet:
+          label: "Parquet"
+  format:
+    type: "select"
+    options: ["prompt_completion", "messages", "alpaca"]
+    default: "prompt_completion"
+    hidden: true
+    ui:
+      label: "Dataset format"
+      group: "LLM PEFT"
+      options:
+        prompt_completion:
+          label: "Prompt/Completion"
+        messages:
+          label: "Messages"
+        alpaca:
+          label: "Alpaca"
+  validation_split:
+    type: "number"
+    default: 0.0
+    min: 0
+    max: 0.5
+    step: 0.01
+    ui:
+      label: "Validation split"
+      group: "LLM PEFT"
+  prompt_template:
+    type: "select"
+    options: ["plain", "chatml"]
+    default: "plain"
+    ui:
+      label: "Prompt template"
+  per_device_train_batch_size:
+    type: "number"
+    min: 1
+    max: 128
+    default: 1
+    ui:
+      label: "Batch size"
+      featured: true
+      group: "LLM PEFT"
+      prompt_hint: "Per-device SFT batch size for each federated client."
+  gradient_accumulation_steps:
+    type: "number"
+    min: 1
+    max: 128
+    default: 1
+    ui:
+      label: "Gradient accumulation"
+      featured: true
+      group: "LLM PEFT"
+
+peft:
+  role: "server"
+  depends_on: "task.type == llm_peft_sft"
+  ui:
+    label: "PEFT Adapter"
+    group: "LLM PEFT"
+  method:
+    type: "select"
+    options: ["lora"]
+    default: "lora"
+    ui:
+      label: "PEFT method"
+  rank:
+    type: "number"
+    min: 1
+    max: 256
+    default: 8
+    ui:
+      label: "LoRA rank"
+      featured: true
+      group: "LLM PEFT"
+  alpha:
+    type: "number"
+    min: 1
+    max: 512
+    default: 16
+    ui:
+      label: "LoRA alpha"
+      featured: true
+      group: "LLM PEFT"
+  dropout:
+    type: "number"
+    min: 0
+    max: 1
+    step: 0.01
+    default: 0.05
+    ui:
+      label: "LoRA dropout"
+  target_modules:
+    type: "text"
+    default: "q_proj,v_proj"
+    ui:
+      label: "Target modules"
+      prompt_hint: "Comma-separated module names for LoRA injection."
+  resume_adapter_path:
+    type: "text"
+    default: ""
+    ui:
+      label: "Resume adapter path"
+      prompt_hint: "Optional path to a saved global adapter artifact for warm-starting this run."
+  quantization:
+    type: "select"
+    options: ["none", "int8", "nf4_4bit"]
+    default: "none"
+    ui:
+      label: "Quantization"
+      options:
+        none:
+          label: "None"
+        int8:
+          label: "Int8"
+          badge: "planned"
+          disabled: true
+          description: "Reserved for the QLoRA runtime milestone."
+        nf4_4bit:
+          label: "NF4 4-bit"
+          badge: "planned"
+          disabled: true
+          description: "Reserved for the QLoRA runtime milestone."
+
+evaluation:
+  role: "server"
+  depends_on: "task.type == llm_peft_sft"
+  ui:
+    label: "LLM Evaluation"
+    group: "LLM PEFT"
+  enable:
+    type: "bool"
+    default: false
+    ui:
+      label: "Enable evaluation"
+      featured: true
+      group: "LLM PEFT"
+      prompt_hint: "Run validation loss/perplexity after each global adapter aggregation round."
+  dataset_path:
+    type: "text"
+    options: []
+    default: ""
+    depends_on: "evaluation.enable == true"
+    ui:
+      label: "Validation dataset"
+      featured: true
+      group: "LLM PEFT"
+      prompt_hint: "Validation JSONL file, standalone Parquet file, or dataset directory under ./datasets/llm."
+      empty_message: "No evaluation datasets found"
+  max_samples:
+    type: "number"
+    min: 1
+    default: 128
+    depends_on: "evaluation.enable == true"
+    ui:
+      label: "Eval max samples"
+      group: "LLM PEFT"
+  batch_size:
+    type: "number"
+    min: 1
+    max: 128
+    default: 1
+    depends_on: "evaluation.enable == true"
+    ui:
+      label: "Eval batch size"
+      group: "LLM PEFT"
 
 federated:
   role: "server"
@@ -125,7 +389,7 @@ federated:
       prompt_hint: "Optimizer learning rate for local training."
   aggregation:
     type: "select"
-    options: ["fedavg", "fedprox", "scaffold"]
+    options: ["fedavg", "weighted_avg", "simple_avg", "fedprox", "scaffold"]
     default: "fedavg"
     ui:
       label: "Aggregation"
@@ -136,6 +400,12 @@ federated:
         fedavg:
           label: "FedAvg"
           description: "Executable default aggregation strategy."
+        weighted_avg:
+          label: "Weighted Avg"
+          description: "Executable sample-weighted averaging strategy."
+        simple_avg:
+          label: "Simple Avg"
+          description: "Executable unweighted averaging strategy."
         fedprox:
           label: "FedProx"
           badge: "experimental"
@@ -156,6 +426,7 @@ federated:
 
 compression:
   role: "server"
+  depends_on: "task.type == classic_fl"
   ui:
     label: "Compression"
     group: "Advanced"
@@ -164,8 +435,32 @@ compression:
       type: "bool"
       default: false
       ui:
-        label: "Enable sparsification"
+        label: "Enable compression"
         group: "Advanced"
+    method:
+      type: "select"
+      options: ["global_topk", "random_k", "threshold", "sign", "quant_int8"]
+      default: "global_topk"
+      depends_on: "compression.sparsification.enable == true"
+      ui:
+        label: "Compression method"
+        group: "Advanced"
+        options:
+          global_topk:
+            label: "Global Top-K"
+            description: "Keep the largest update values globally."
+          random_k:
+            label: "Random-K"
+            description: "Keep a random subset of update values."
+          threshold:
+            label: "Threshold"
+            description: "Drop update values below an absolute threshold."
+          sign:
+            label: "Sign"
+            description: "Send sign-only updates scaled by mean magnitude."
+          quant_int8:
+            label: "Int8 Quantization"
+            description: "Quantize updates to int8 and dequantize before aggregation."
     ratio:
       type: "number"
       default: 0.5
@@ -173,11 +468,21 @@ compression:
       max: 1.0
       depends_on: "compression.sparsification.enable == true"
       ui:
-        label: "Top-K ratio"
+        label: "Keep ratio"
+        group: "Advanced"
+    threshold:
+      type: "number"
+      default: 0.001
+      min: 0
+      step: 0.0001
+      depends_on: "compression.sparsification.enable == true"
+      ui:
+        label: "Threshold"
         group: "Advanced"
 
 privacy:
   role: "server"
+  depends_on: "task.type == classic_fl"
   ui:
     label: "Privacy"
     group: "Advanced"
@@ -188,6 +493,14 @@ privacy:
       ui:
         label: "Enable CKKS"
         group: "Advanced"
+    method:
+      type: "select"
+      options: ["ckks"]
+      default: "ckks"
+      depends_on: "privacy.homomorphic_encryption.enable == true"
+      ui:
+        label: "Encryption method"
+        group: "Advanced"
     poly_modulus_degree:
       type: "select"
       options: [4096, 8192, 16384]
@@ -195,6 +508,47 @@ privacy:
       depends_on: "privacy.homomorphic_encryption.enable == true"
       ui:
         label: "Polynomial modulus degree"
+        group: "Advanced"
+  differential_privacy:
+    enable:
+      type: "bool"
+      default: false
+      ui:
+        label: "Enable DP"
+        group: "Advanced"
+    clipping_norm:
+      type: "number"
+      default: 1.0
+      min: 0.0001
+      step: 0.1
+      depends_on: "privacy.differential_privacy.enable == true"
+      ui:
+        label: "Clipping norm"
+        group: "Advanced"
+    noise_multiplier:
+      type: "number"
+      default: 0.0
+      min: 0
+      step: 0.1
+      depends_on: "privacy.differential_privacy.enable == true"
+      ui:
+        label: "Noise multiplier"
+        group: "Advanced"
+  secure_aggregation:
+    enable:
+      type: "bool"
+      default: false
+      ui:
+        label: "Enable secure aggregation"
+        group: "Advanced"
+    mask_std:
+      type: "number"
+      default: 1.0
+      min: 0
+      step: 0.1
+      depends_on: "privacy.secure_aggregation.enable == true"
+      ui:
+        label: "Mask std"
         group: "Advanced"
 
 system:

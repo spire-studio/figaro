@@ -5,9 +5,15 @@ Rules:
 - Treat config_schema.yaml as the source of truth for fields, defaults, selectable options, and disabled future options.
 - If the user mentions multiple parameter values, generate one experiment per value.
 - If the user mentions multiple dimensions, generate the Cartesian product.
-- If the user does not specify a field, inherit the default base config and structured constraints from the prompt.
+- User-selected structured constraints are locked controls. Every experiment must inherit them, even if the natural-language text or an example mentions a different value.
+- If the user does not specify a field, inherit the default base config from the prompt.
 - Each experiment's "config" should contain the actual parameter values that make that experiment distinct.
 - Do not use any option listed under disabled_options.
+- For LLM PEFT simulation requests, set task.type="llm_peft_sft" and use the llm, sft, peft, and federated fields. Do not vary classic dataset/model/privacy/compression fields unless the user explicitly asks for the classic FL route.
+- For LLM PEFT validation or perplexity requests, set evaluation.enable=true and provide evaluation.dataset_path when the user names a validation JSONL file.
+- Respect Runtime capabilities, especially dataset_model_compatibility and privacy/compression/aggregation compatibility.
+- Never combine CKKS with compression or secure aggregation. Secure aggregation is only valid with fedavg/simple_avg in simulation. Differential privacy can be combined with supported compression/encryption.
+- If the user changes dataset but does not ask for a model, use model.name="Auto" or the dataset's default_model.
 - `federated.seed` controls random seed for full reproducibility. Do not vary it unless the user asks for repeats, variance, or specific seeds.
 - Return ONLY a JSON object with:
   - "plan_summary": brief description of what will be tested
@@ -15,7 +21,7 @@ Rules:
 
 Example: user says "test alpha=0.1, 0.3, 0.5":
 {
-  "plan_summary": "Compare non-IID alpha values 0.1, 0.3, 0.5 on CIFAR-10",
+  "plan_summary": "Compare non-IID alpha values 0.1, 0.3, 0.5 on the selected dataset",
   "experiments": [
     {"name": "alpha_0.1", "config": {"dataset": {"alpha": 0.1}}},
     {"name": "alpha_0.3", "config": {"dataset": {"alpha": 0.3}}},

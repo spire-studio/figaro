@@ -32,6 +32,15 @@ from app.models.agent import (
     AgentExperimentStatus,
 )
 from app.repositories.agent import AgentExperimentRepository
+from app.services.llm_resources import augment_config_schema_with_llm_resources
+from app.services.run_artifacts import (
+    legacy_live_results_filename,
+    live_results_filename,
+    run_artifact_timestamp,
+    run_config_filename,
+    run_log_filename,
+)
+from app.services.simulation.compatibility import canonicalize_runtime_config, validate_runtime_config_or_raise
 
 from app.core.logger import get_logger
 
@@ -42,7 +51,7 @@ logger = get_logger(__name__)
 # Shared constants (mirrored from simulation run_service / run_metrics_service)
 # ---------------------------------------------------------------------------
 
-RESULT_PATH_PATTERN = re.compile(r"结果已保存到[:：]\s*(.+)$")
+RESULT_PATH_PATTERN = re.compile(r"\u7ed3\u679c\u5df2\u4fdd\u5b58\u5230[:\uff1a]\s*(.+)$")
 LOG_LEVEL_PREFIX_PATTERN = re.compile(
     r"^\s*(DEBUG|INFO|WARNING|WARN|ERROR|CRITICAL)\b[\s:\-]",
     re.IGNORECASE,
@@ -205,7 +214,7 @@ class AgentExperimentService:
         loaded = yaml.safe_load(schema_path.read_text(encoding="utf-8"))
         if not isinstance(loaded, dict):
             raise exceptions.InternalServiceError("Config schema must be a YAML object.")
-        return loaded
+        return augment_config_schema_with_llm_resources(loaded, cls._project_root())
 
     @classmethod
     def normalize_simulation_config(cls, config: dict[str, Any]) -> dict[str, Any]:
@@ -235,7 +244,9 @@ class AgentExperimentService:
         system["mode"] = "simulation"
         system["node_role"] = "server"
 
+        canonicalize_runtime_config(merged)
         cls._validate_config_node(merged, schema, path_prefix="")
+        validate_runtime_config_or_raise(merged)
         return merged
 
     @classmethod
@@ -310,6 +321,12 @@ class AgentExperimentService:
             self._project_root() / "configs" / "agent_experiment_runs" / f"{run_id}.json",
             self._project_root() / "results" / f"live_results_{run_id}.json",
         ]
+        candidates.extend((self._project_root() / "configs" / "agent_experiment_runs").glob(f"{run_id}*.json"))
+        candidates.extend((self._project_root() / "configs" / "agent_experiment_runs").glob(f"*_{run_id}.json"))
+        candidates.extend((self._project_root() / "results").glob(f"live_results_{run_id}*.json"))
+        candidates.extend((self._project_root() / "results").glob(f"*_{run_id}_live_results.json"))
+        candidates.extend((self._project_root() / "logs" / "agent_experiment_runs").glob(f"{run_id}*_server.log"))
+        candidates.extend((self._project_root() / "logs" / "agent_experiment_runs").glob(f"*_{run_id}_server.log"))
         for path in candidates:
             try:
                 if path.exists() and path.is_file():
@@ -476,14 +493,12 @@ class AgentExperimentRunService:
         run = await self.repo.get_run(run_id)
         if not run:
             raise exceptions.RunNotFound("Run not found")
-        # If terminal and already has metrics, return them
-        if run.status in TERMINAL_RUN_STATUSES and isinstance(run.metrics_json, dict) and run.metrics_json:
-            return self._normalize_metrics_payload(run.metrics_json)
         # Try live result file
-        live_result_path = self._results_dir() / self._build_live_results_filename(run_id)
-        loaded = self._load_metrics_file(live_result_path)
-        if loaded is not None:
-            return loaded
+        for live_result_path in self._live_result_candidates_for_run(run):
+            loaded = self._load_metrics_file(live_result_path)
+            if loaded is not None:
+                await self._persist_run_metrics_if_changed(run, loaded)
+                return loaded
 
         # Try result artifacts
         results = await self.repo.list_results(run_id)
@@ -492,12 +507,22 @@ class AgentExperimentRunService:
             artifact_path = self._resolve_result_artifact_path(artifact.path)
             loaded = self._load_metrics_file(artifact_path)
             if loaded is not None:
+                await self._persist_run_metrics_if_changed(run, loaded)
                 return loaded
 
         if isinstance(run.metrics_json, dict) and run.metrics_json:
             return self._normalize_metrics_payload(run.metrics_json)
 
         return self._empty_metrics_payload()
+
+    async def _persist_run_metrics_if_changed(self, run: AgentExperimentRun, metrics: dict[str, Any]) -> None:
+        current = run.metrics_json if isinstance(run.metrics_json, dict) else {}
+        if self._stable_json(current) == self._stable_json(metrics):
+            return
+
+        await self.repo.update_run_metrics(run, metrics)
+        await self.session.commit()
+        await self.session.refresh(run)
 
     async def delete_run(self, run_id: str) -> None:
         run = await self.get_run(run_id)
@@ -522,18 +547,22 @@ class AgentExperimentRunService:
         )
         await self.repo.create_run(run)
 
-        config_path = self._write_run_config(run.id, config_json)
+        artifact_timestamp = run_artifact_timestamp(run.created_at)
+        config_path = self._write_run_config(run.id, config_json, artifact_timestamp=artifact_timestamp)
         await self.repo.add_result(
             run_id=run.id,
             artifact_type=RUN_CONFIG_ARTIFACT,
             path=str(config_path),
-            metadata_json={"source": "run_config"},
+            metadata_json={"source": "run_config", "artifact_timestamp": artifact_timestamp},
         )
 
         command = self._build_train_command(config_path)
         run.command = " ".join(command)
 
-        live_results_path = self._results_dir() / self._build_live_results_filename(run.id)
+        live_results_path = self._results_dir() / self._build_live_results_filename(
+            run.id,
+            artifact_timestamp=artifact_timestamp,
+        )
         child_env = self._build_run_environment(live_results_path)
         process = await self._spawn_subprocess(command, env=child_env)
 
@@ -548,13 +577,21 @@ class AgentExperimentRunService:
         await self.session.refresh(run)
 
         self._processes[run.id] = process
-        self._tasks[run.id] = asyncio.create_task(self._watch_process(run.id, process))
+        self._tasks[run.id] = asyncio.create_task(
+            self._watch_process(run.id, process, artifact_timestamp=artifact_timestamp)
+        )
         return run
 
-    async def _watch_process(self, run_id: str, process: asyncio.subprocess.Process) -> None:
+    async def _watch_process(
+        self,
+        run_id: str,
+        process: asyncio.subprocess.Process,
+        *,
+        artifact_timestamp: str | None = None,
+    ) -> None:
         """Consume subprocess streams and persist final run status/artifacts."""
         result_path: str | None = None
-        log_path = self._run_log_path(run_id)
+        log_path = self._run_log_path(run_id, artifact_timestamp=artifact_timestamp)
 
         async def consume(stream: asyncio.StreamReader, level: str, prefix: str) -> None:
             nonlocal result_path
@@ -566,7 +603,7 @@ class AgentExperimentRunService:
                     message = line.decode("utf-8", errors="replace").rstrip()
                     if not message:
                         continue
-                    file_obj.write(f"[{prefix}] {message}\\n")
+                    file_obj.write(f"[{prefix}] {message}\n")
                     file_obj.flush()
 
                     match = RESULT_PATH_PATTERN.search(message)
@@ -601,21 +638,35 @@ class AgentExperimentRunService:
                 )
                 await repo.add_log(run_id, f"run finished with exit_code={exit_code}")
 
+                metrics_persisted = False
                 if result_path:
                     await repo.add_result(
                         run_id=run_id,
                         artifact_type=TRAINING_RESULT_ARTIFACT,
                         path=result_path,
-                        metadata_json={"source": "process_output"},
+                        metadata_json={
+                            "source": "process_output",
+                            "artifact_timestamp": artifact_timestamp,
+                        },
                     )
                     resolved = self._resolve_result_artifact_path(result_path)
                     normalized = self._load_metrics_file(resolved)
                     if normalized is not None:
                         await repo.update_run_metrics(run, normalized)
+                        metrics_persisted = True
 
-                if not run.metrics_json:
+                if not metrics_persisted:
                     guessed = self._guess_live_result_file_for_run(run)
                     if guessed is not None:
+                        await repo.add_result(
+                            run_id=run_id,
+                            artifact_type=TRAINING_RESULT_ARTIFACT,
+                            path=str(guessed),
+                            metadata_json={
+                                "source": "live_results_fallback",
+                                "artifact_timestamp": artifact_timestamp,
+                            },
+                        )
                         normalized = self._load_metrics_file(guessed)
                         if normalized is not None:
                             await repo.update_run_metrics(run, normalized)
@@ -645,17 +696,33 @@ class AgentExperimentRunService:
         path.mkdir(parents=True, exist_ok=True)
         return path
 
-    def _run_log_path(self, run_id: str) -> Path:
-        return self._runtime_log_dir() / f"{run_id}_server.log"
+    def _run_log_path(self, run_id: str, *, artifact_timestamp: str | None = None) -> Path:
+        if artifact_timestamp is None:
+            return self._runtime_log_dir() / f"{run_id}_server.log"
+        return self._runtime_log_dir() / run_log_filename(
+            run_id,
+            timestamp=artifact_timestamp,
+            role="server",
+        )
 
-    def _build_live_results_filename(self, run_id: str) -> str:
-        return f"live_results_{run_id}.json"
+    def _build_live_results_filename(self, run_id: str, *, artifact_timestamp: str | None = None) -> str:
+        if artifact_timestamp is None:
+            return f"live_results_{run_id}.json"
+        return live_results_filename(run_id, timestamp=artifact_timestamp)
 
-    def _run_config_path(self, run_id: str) -> Path:
-        return self._job_config_dir() / f"{run_id}.json"
+    def _run_config_path(self, run_id: str, *, artifact_timestamp: str | None = None) -> Path:
+        if artifact_timestamp is None:
+            return self._job_config_dir() / f"{run_id}.json"
+        return self._job_config_dir() / run_config_filename(run_id, timestamp=artifact_timestamp)
 
-    def _write_run_config(self, run_id: str, config_json: dict[str, Any]) -> Path:
-        path = self._run_config_path(run_id)
+    def _write_run_config(
+        self,
+        run_id: str,
+        config_json: dict[str, Any],
+        *,
+        artifact_timestamp: str | None = None,
+    ) -> Path:
+        path = self._run_config_path(run_id, artifact_timestamp=artifact_timestamp)
         path.write_text(json.dumps(config_json, ensure_ascii=False, indent=2), encoding="utf-8")
         return path
 
@@ -705,16 +772,22 @@ class AgentExperimentRunService:
         return AgentExperimentRunStatus.SUCCEEDED if exit_code == 0 else AgentExperimentRunStatus.FAILED
 
     def _cleanup_run_local_files(self, run_id: str) -> None:
-        for path in [
-            self._run_config_path(run_id),
-            self._results_dir() / self._build_live_results_filename(run_id),
-            self._run_log_path(run_id),
-        ]:
+        for path in self._matching_run_local_files(run_id):
             try:
                 if path.exists() and path.is_file():
                     path.unlink()
             except OSError:
                 continue
+
+    def _matching_run_local_files(self, run_id: str) -> list[Path]:
+        return [
+            *self._job_config_dir().glob(f"{run_id}*.json"),
+            *self._job_config_dir().glob(f"*_{run_id}.json"),
+            *self._results_dir().glob(f"live_results_{run_id}*.json"),
+            *self._results_dir().glob(f"*_{run_id}_live_results.json"),
+            *self._runtime_log_dir().glob(f"{run_id}*_server.log"),
+            *self._runtime_log_dir().glob(f"*_{run_id}_server.log"),
+        ]
 
     # -- metrics helpers (mirrored from SimulationRunMetricsService) ------
 
@@ -731,6 +804,18 @@ class AgentExperimentRunService:
                 "global_loss": [],
                 "global_accuracy": [],
             },
+            "llm_results": {
+                "rounds": [],
+                "train_loss": [],
+                "validation_loss": [],
+                "perplexity": [],
+                "token_throughput": [],
+                "adapter_size_bytes": [],
+            },
+            "llm_dataset": {},
+            "llm_evaluation": {},
+            "llm_runtime": {},
+            "llm_artifacts": [],
             "client_results": {},
         }
 
@@ -755,26 +840,40 @@ class AgentExperimentRunService:
         directory = self._results_dir()
         if not directory.exists():
             return None
-        expected = directory / self._build_live_results_filename(run.id)
-        if expected.exists() and expected.is_file():
-            return expected
+        for expected in self._live_result_candidates_for_run(run):
+            if expected.exists() and expected.is_file():
+                return expected
 
         started_at = run.started_at or run.created_at
         if started_at is None:
             return None
         start_ts = started_at.timestamp()
         candidates: list[Path] = []
-        for path in directory.glob("live_results_*.json"):
-            try:
-                mtime = path.stat().st_mtime
-            except OSError:
-                continue
-            if mtime >= start_ts - 5:
-                candidates.append(path)
+        for pattern in ("*_live_results.json", "live_results_*.json"):
+            for path in directory.glob(pattern):
+                try:
+                    mtime = path.stat().st_mtime
+                except OSError:
+                    continue
+                if mtime >= start_ts - 5:
+                    candidates.append(path)
         if not candidates:
             return None
         candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
         return candidates[0]
+
+    def _live_result_candidates_for_run(self, run: AgentExperimentRun) -> list[Path]:
+        directory = self._results_dir()
+        timestamped = directory / self._build_live_results_filename(
+            run.id,
+            artifact_timestamp=run_artifact_timestamp(run.created_at),
+        )
+        legacy_timestamped = directory / legacy_live_results_filename(
+            run.id,
+            timestamp=run_artifact_timestamp(run.created_at),
+        )
+        legacy = directory / self._build_live_results_filename(run.id)
+        return list(dict.fromkeys([timestamped, legacy_timestamped, legacy]))
 
     def _normalize_metrics_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         normalized = self._empty_metrics_payload()
@@ -794,6 +893,35 @@ class AgentExperimentRunService:
                 "global_accuracy": self._to_float_list(global_results.get("global_accuracy")),
             }
 
+        llm_results = payload.get("llm_results")
+        if isinstance(llm_results, dict):
+            normalized["llm_results"] = {
+                "rounds": self._to_int_list(llm_results.get("rounds")),
+                "train_loss": self._to_float_list(llm_results.get("train_loss")),
+                "validation_loss": self._to_float_list(llm_results.get("validation_loss")),
+                "perplexity": self._to_float_list(llm_results.get("perplexity")),
+                "token_throughput": self._to_float_list(llm_results.get("token_throughput")),
+                "adapter_size_bytes": self._to_int_list(llm_results.get("adapter_size_bytes")),
+            }
+
+        llm_dataset = payload.get("llm_dataset")
+        if isinstance(llm_dataset, dict):
+            normalized["llm_dataset"] = llm_dataset
+
+        llm_evaluation = payload.get("llm_evaluation")
+        if isinstance(llm_evaluation, dict):
+            normalized["llm_evaluation"] = llm_evaluation
+
+        llm_runtime = payload.get("llm_runtime")
+        if isinstance(llm_runtime, dict):
+            normalized["llm_runtime"] = llm_runtime
+
+        llm_artifacts = payload.get("llm_artifacts")
+        if isinstance(llm_artifacts, list):
+            normalized["llm_artifacts"] = [
+                artifact for artifact in llm_artifacts if isinstance(artifact, dict)
+            ]
+
         client_results = payload.get("client_results")
         if isinstance(client_results, dict):
             normalized_clients: dict[str, dict[str, list[float]]] = {}
@@ -801,6 +929,7 @@ class AgentExperimentRunService:
                 if not isinstance(client_name, str) or not isinstance(client_data, dict):
                     continue
                 normalized_clients[client_name] = {
+                    "rounds": self._to_int_list(client_data.get("rounds")),
                     "train_loss": self._to_float_list(client_data.get("train_loss")),
                     "train_acc": self._to_float_list(client_data.get("train_acc")),
                     "test_loss": self._to_float_list(client_data.get("test_loss")),
@@ -833,6 +962,10 @@ class AgentExperimentRunService:
             except (TypeError, ValueError):
                 continue
         return output
+
+    @staticmethod
+    def _stable_json(value: Any) -> str:
+        return json.dumps(value, sort_keys=True, ensure_ascii=False)
 
     # -- log level inference ---------------------------------------------
 

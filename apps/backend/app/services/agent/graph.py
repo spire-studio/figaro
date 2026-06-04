@@ -31,11 +31,13 @@ from .planning import (
     build_schema_prompt_context,
     collect_disabled_option_errors,
     deep_merge_config,
+    lock_structured_constraints,
+    merge_llm_resource_constraints,
     select_llm_model,
 )
 from .prompts import build_plan_prompt, build_plan_system_instructions
 from .state import AgentState, ExperimentPlan, ExperimentRecord
-from .summary import build_results_table, build_summary_text, get_last_global_accuracy
+from .summary import build_results_table, build_summary_text, get_agent_run_score
 
 
 class FederatedAgentGraphBuilder:
@@ -86,6 +88,7 @@ class FederatedAgentGraphBuilder:
         constrained_base = experiment_service.normalize_simulation_config(
             deep_merge_config(base_config, state.config_constraints)
         )
+        effective_constraints = merge_llm_resource_constraints(constrained_base, state.config_constraints)
         disabled_errors = collect_disabled_option_errors(constrained_base, schema)
         if disabled_errors:
             raise exceptions.BadRequestError("; ".join(disabled_errors))
@@ -97,8 +100,12 @@ class FederatedAgentGraphBuilder:
                 raw_config = exp.get("config_patch", exp.get("config", {}))
                 if not isinstance(raw_config, dict):
                     raw_config = {}
+                merged = lock_structured_constraints(
+                    deep_merge_config(constrained_base, raw_config),
+                    effective_constraints,
+                )
                 normalized = experiment_service.normalize_simulation_config(
-                    deep_merge_config(constrained_base, raw_config)
+                    merged
                 )
                 disabled_errors = collect_disabled_option_errors(normalized, schema)
                 if disabled_errors:
@@ -127,7 +134,7 @@ class FederatedAgentGraphBuilder:
             capabilities=capabilities,
             base_config=constrained_base,
             schema_context=schema_context,
-            config_constraints=state.config_constraints,
+            config_constraints=effective_constraints,
         )
 
         logger.info("llm input instructions=%s", instructions)
@@ -165,8 +172,12 @@ class FederatedAgentGraphBuilder:
                         patch_config = exp.get("config", {})
                         if not isinstance(patch_config, dict):
                             patch_config = {}
-                        # Merge with constrained base config and normalize.
-                        merged = deep_merge_config(constrained_base, patch_config)
+                        # Merge with constrained base config, then re-apply
+                        # structured controls so prompt drift cannot override them.
+                        merged = lock_structured_constraints(
+                            deep_merge_config(constrained_base, patch_config),
+                            effective_constraints,
+                        )
                         try:
                             normalized = experiment_service.normalize_simulation_config(merged)
                             disabled_errors = collect_disabled_option_errors(normalized, schema)
@@ -222,6 +233,7 @@ class FederatedAgentGraphBuilder:
         base_config = experiment_service.normalize_simulation_config(
             deep_merge_config(build_initial_config(schema), state.config_constraints)
         )
+        effective_constraints = merge_llm_resource_constraints(base_config, state.config_constraints)
 
         max_wait_seconds = 3600
         poll_interval = 2
@@ -232,7 +244,10 @@ class FederatedAgentGraphBuilder:
             state.iteration = idx + 1
 
             # -- Build config --
-            merged = deep_merge_config(base_config, plan.config_patch)
+            merged = lock_structured_constraints(
+                deep_merge_config(base_config, plan.config_patch),
+                effective_constraints,
+            )
             config = experiment_service.normalize_simulation_config(merged)
             disabled_errors = collect_disabled_option_errors(config, schema)
             if disabled_errors:
@@ -295,7 +310,7 @@ class FederatedAgentGraphBuilder:
                 name=plan.name,
                 iteration_goal=plan.iteration_goal,
                 plan_summary=plan.plan_summary,
-                score=get_last_global_accuracy(metrics),
+                score=get_agent_run_score(metrics),
                 decision="recorded",
             )
             state.experiment_results.append(record)

@@ -1,5 +1,14 @@
 # Datasets
-datasets/
+datasets/*
+!datasets/llm/
+datasets/llm/*
+!datasets/llm/README.md
+
+# Local LLM models
+models/*
+!models/llm/
+models/llm/*
+!models/llm/README.md
 
 # Python
 __pycache__/

@@ -93,3 +93,45 @@ class AgentOptimizationJob(SQLModel, table=True):
         default=None,
         sa_column=Column(DateTime(timezone=True), nullable=True),
     )
+
+
+class AgentConfigVersion(SQLModel, table=True):
+    __tablename__ = "agent_config_versions"
+
+    id: int | None = Field(
+        default=None,
+        sa_column=Column(Integer, primary_key=True, nullable=False),
+    )
+    optimization_job_id: int = Field(
+        sa_column=Column(Integer, nullable=False, index=True),
+    )
+    run_id: str | None = Field(
+        default=None,
+        sa_column=Column(String(64), nullable=True, index=True),
+    )
+    iteration: int = Field(
+        default=0,
+        sa_column=Column(Integer, nullable=False, index=True),
+    )
+    source: str = Field(
+        default="experiment",
+        sa_column=Column(String(32), nullable=False, index=True),
+    )
+    label: str = Field(
+        sa_column=Column(String(255), nullable=False),
+    )
+    config_hash: str = Field(
+        sa_column=Column(String(64), nullable=False, index=True),
+    )
+    config_json: dict[str, Any] = Field(
+        default_factory=dict,
+        sa_column=Column(JSON().with_variant(JSONB, "postgresql"), nullable=False),
+    )
+    diff_json: list[dict[str, Any]] = Field(
+        default_factory=list,
+        sa_column=Column(JSON().with_variant(JSONB, "postgresql"), nullable=False),
+    )
+    created_at: datetime = Field(
+        default_factory=utcnow,
+        sa_column=Column(DateTime(timezone=True), nullable=False),
+    )

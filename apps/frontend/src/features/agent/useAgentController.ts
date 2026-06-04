@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import {
   agentApi,
   type AgentExperimentResponse,
+  type AgentHistoryFilters,
   type AgentOptimizationObjective,
   type AgentOptimizationJobSummary,
   type AgentOptimizeProgressResponse,
@@ -11,10 +12,19 @@ import {
   type AgentRunResponse,
 } from "../../api/agent";
 import type { AgentPageProps, AgentWorkflowStep, AgentPlanDraft } from "../../pages/types";
+import { latestLlmLoss } from "../simulation/llm-metrics";
 import { toErrorMessage } from "../simulation/utils";
-import { removeValueByPath, setConfigValue } from "./schema";
+import {
+  buildAgentConfig,
+  applyConfigConstraints,
+  inferSftSettingsForDatasetPath,
+  materializeAgentConfigConstraints,
+  missingLlmResourceMessages,
+  removeValueByPath,
+  setConfigValue,
+} from "./schema";
 
-const DEFAULT_GOAL = "Compare CIFAR-10 non-IID with alpha=0.1, 0.3, 0.5";
+const DEFAULT_GOAL = "Compare non-IID alpha=0.1, 0.3, 0.5 on the selected dataset";
 const POLL_INTERVAL_MS = 1500;
 
 function makeDefaultJobName(): string {
@@ -42,12 +52,12 @@ function toHistorySummary(progress: AgentOptimizeProgressResponse): AgentOptimiz
   if (progress.optimization_job_id === null) {
     return null;
   }
-  const bestMetrics = progress.best_metrics as Record<string, unknown> | null;
-  const globalResults = (bestMetrics?.global_results ?? null) as Record<string, unknown> | null;
-  const accuracy = Array.isArray(globalResults?.global_accuracy) ? globalResults?.global_accuracy : [];
+  const llmLoss = latestLlmLoss(progress.best_metrics);
+  const accuracy = progress.best_metrics?.global_results?.global_accuracy ?? [];
   const lastAccuracy = accuracy.length > 0 && typeof accuracy[accuracy.length - 1] === "number"
-    ? (accuracy[accuracy.length - 1] as number)
+    ? accuracy[accuracy.length - 1]
     : null;
+  const bestScore = llmLoss !== null ? -llmLoss : lastAccuracy;
   return {
     optimization_job_id: progress.optimization_job_id,
     task_id: progress.task_id,
@@ -61,7 +71,7 @@ function toHistorySummary(progress: AgentOptimizeProgressResponse): AgentOptimiz
     max_iterations: progress.max_iterations,
     current_iteration: progress.current_iteration,
     completed_iterations: progress.completed_iterations,
-    best_score: lastAccuracy,
+    best_score: bestScore,
     created_at: progress.created_at ?? new Date().toISOString(),
     updated_at: progress.updated_at ?? new Date().toISOString(),
     finished_at: progress.finished_at,
@@ -86,6 +96,7 @@ export function useAgentController(): AgentPageProps {
   const [experimentRuns, setExperimentRuns] = useState<AgentRunResponse[]>([]);
   const [selectedExperimentId, setSelectedExperimentId] = useState<number | null>(null);
   const [historyJobs, setHistoryJobs] = useState<AgentOptimizationJobSummary[]>([]);
+  const [historyFilters, setHistoryFilters] = useState<AgentHistoryFilters>({ status: "all", objective: "all" });
   const [progress, setProgress] = useState<AgentOptimizeProgressResponse | null>(null);
   const [result, setResult] = useState<AgentOptimizeResponse | null>(null);
   const [selectedHistory, setSelectedHistory] = useState<AgentOptimizeProgressResponse | null>(null);
@@ -108,8 +119,8 @@ export function useAgentController(): AgentPageProps {
     });
   }
 
-  async function refreshHistoryJobs(): Promise<void> {
-    const jobs = await agentApi.listOptimizationJobs();
+  async function refreshHistoryJobs(filters: AgentHistoryFilters = historyFilters): Promise<void> {
+    const jobs = await agentApi.listOptimizationJobs(filters);
     setHistoryJobs(jobs);
     if (jobs.length > 0 && selectedHistoryJobId === null && !busy && !progress) {
       const first = jobs[0];
@@ -126,6 +137,17 @@ export function useAgentController(): AgentPageProps {
   async function refreshExperiments(): Promise<void> {
     const list = await agentApi.listExperiments();
     setExperiments(list);
+  }
+
+  async function refreshLlmResources(): Promise<void> {
+    const [models, schema] = await Promise.all([
+      agentApi.listModels(),
+      agentApi.getConfigSchema(),
+    ]);
+
+    setModelOptions(models.models);
+    setDefaultModelName(models.default_model);
+    setConfigSchema(schema);
   }
 
   async function selectExperiment(experimentId: number): Promise<void> {
@@ -173,6 +195,15 @@ export function useAgentController(): AgentPageProps {
       toast.warning("Please provide a job name.");
       return;
     }
+    const submissionConstraints = materializeAgentConfigConstraints(configSchema, configConstraints);
+    const missingResources = missingLlmResourceMessages(
+      configSchema,
+      buildAgentConfig(configSchema, submissionConstraints),
+    );
+    if (missingResources.length > 0) {
+      toast.error(missingResources.join(", "));
+      return;
+    }
   
     setBusy(true);
     try {
@@ -181,14 +212,14 @@ export function useAgentController(): AgentPageProps {
         job_name: trimmedJobName,
         model_name: modelName.trim().length > 0 ? modelName.trim() : null,
         system_mode: "simulation",
-        config_constraints: configConstraints,
+        config_constraints: submissionConstraints,
       });
   
       setDraftPlan({
         job_id: data.optimization_job_id!,
         goal: data.goal,
         experiments: data.experiments,
-        config_constraints: data.config_constraints ?? configConstraints,
+        config_constraints: data.config_constraints ?? submissionConstraints,
       });
       
       setWorkflowStep("preview");
@@ -202,6 +233,20 @@ export function useAgentController(): AgentPageProps {
   
   async function handleExecutePlan(editedExperiments: any[]): Promise<void> {
     if (!draftPlan) return;
+    const submissionConstraints = materializeAgentConfigConstraints(
+      configSchema,
+      draftPlan.config_constraints ?? configConstraints,
+    );
+    const disabledResources = editedExperiments.flatMap((exp) =>
+      missingLlmResourceMessages(
+        configSchema,
+        buildAgentConfig(configSchema, applyConfigConstraints(exp.config_patch ?? {}, submissionConstraints)),
+      ),
+    );
+    if (disabledResources.length > 0) {
+      toast.error(Array.from(new Set(disabledResources)).join(", "));
+      return;
+    }
     
     setBusy(true);
     setResult(null);
@@ -216,11 +261,16 @@ export function useAgentController(): AgentPageProps {
         model_name: modelName.trim().length > 0 ? modelName.trim() : null,
         objective: objective,
         planned_experiments: editedExperiments, // Bypass LLM parse in backend
-        config_constraints: draftPlan.config_constraints ?? configConstraints,
+        config_constraints: submissionConstraints,
       });
       
       setProgress(data);
       setActiveTaskId(data.task_id);
+      setSelectedHistory(data);
+      if (data.optimization_job_id !== null) {
+        setSelectedHistoryJobId(data.optimization_job_id);
+      }
+      upsertHistoryJob(toHistorySummary(data));
       setWorkflowStep("running");
     } catch (error) {
       notifyError(error, "agent-execute");
@@ -239,6 +289,15 @@ export function useAgentController(): AgentPageProps {
       toast.warning("Please provide a job name for this experiment.");
       return;
     }
+    const submissionConstraints = materializeAgentConfigConstraints(configSchema, configConstraints);
+    const missingResources = missingLlmResourceMessages(
+      configSchema,
+      buildAgentConfig(configSchema, submissionConstraints),
+    );
+    if (missingResources.length > 0) {
+      toast.error(missingResources.join(", "));
+      return;
+    }
 
     setBusy(true);
     setResult(null);
@@ -252,7 +311,7 @@ export function useAgentController(): AgentPageProps {
         model_name: modelName.trim().length > 0 ? modelName.trim() : null,
         job_name: trimmedJobName,
         objective,
-        config_constraints: configConstraints,
+        config_constraints: submissionConstraints,
       });
       setProgress(data);
       setActiveTaskId(data.task_id);
@@ -262,6 +321,7 @@ export function useAgentController(): AgentPageProps {
       }
       upsertHistoryJob(toHistorySummary(data));
       setJobName(makeDefaultJobName());
+      setWorkflowStep("running");
     } catch (error) {
       notifyError(error, "agent-optimize");
       setBusy(false);
@@ -277,44 +337,21 @@ export function useAgentController(): AgentPageProps {
 
   const presets = useMemo(
     () => [
-      "Compare CIFAR-10 non-IID with alpha=0.1, 0.3, 0.5",
+      "Compare non-IID alpha=0.1, 0.3, 0.5 on the selected dataset",
       "Compare 10 clients vs 20 clients with FedAvg",
       "Test training rounds 10, 20, 50 on accuracy",
+      "Run LLM PEFT SFT with LoRA rank 8 and rank 16 on a JSONL prompt/completion dataset",
     ],
     [],
   );
 
   useEffect(() => {
     let cancelled = false;
-    const loadModelOptions = async () => {
-      try {
-        const response = await agentApi.listModels();
-        if (cancelled) {
-          return;
-        }
-        setModelOptions(response.models);
-        setDefaultModelName(response.default_model);
-      } catch (error) {
-        if (cancelled) {
-          return;
-        }
-        toast.error(toErrorMessage(error), { id: "agent-models" });
+    void refreshLlmResources().catch((error: unknown) => {
+      if (!cancelled) {
+        toast.error(toErrorMessage(error), { id: "agent-llm-resources" });
       }
-    };
-    const loadConfigSchema = async () => {
-      try {
-        const schema = await agentApi.getConfigSchema();
-        if (!cancelled) {
-          setConfigSchema(schema);
-        }
-      } catch (error) {
-        if (!cancelled) {
-          toast.error(toErrorMessage(error), { id: "agent-config-schema" });
-        }
-      }
-    };
-    void loadModelOptions();
-    void loadConfigSchema();
+    });
     void refreshHistoryJobs().catch((error: unknown) => {
       if (!cancelled) {
         notifyError(error, "agent-history-jobs");
@@ -392,7 +429,15 @@ export function useAgentController(): AgentPageProps {
   }, [activeTaskId]);
 
   function setConfigConstraint(path: string, value: unknown): void {
-    setConfigConstraints((current) => setConfigValue(current, path, value));
+    setConfigConstraints((current) => {
+      let next = setConfigValue(current, path, value);
+      if (path === "sft.dataset_path") {
+        for (const [inferredPath, inferredValue] of Object.entries(inferSftSettingsForDatasetPath(value))) {
+          next = setConfigValue(next, inferredPath, inferredValue);
+        }
+      }
+      return next;
+    });
   }
 
   function clearConfigConstraint(path: string): void {
@@ -411,6 +456,7 @@ export function useAgentController(): AgentPageProps {
     experimentRuns,
     goal,
     handleOptimize,
+    historyFilters,
     historyJobs,
     jobName,
     lastSubmittedGoal,
@@ -427,12 +473,15 @@ export function useAgentController(): AgentPageProps {
     selectedHistoryJobId,
     selectExperiment,
     selectHistoryJob,
+    refreshHistoryJobs,
+    refreshLlmResources,
     setConfigConstraint,
     setGoal,
     setJobName,
     setMaxIterations,
     setModelName,
     setObjective,
+    setHistoryFilters,
     workflowStep,
     setWorkflowStep,
     draftPlan,

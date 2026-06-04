@@ -1,4 +1,4 @@
-import { BarChart3, FileText, Play, RefreshCcw, Square, TerminalSquare, Trash2 } from "lucide-react";
+import { BarChart3, FileText, GitBranch, Play, RefreshCcw, Square, TerminalSquare, Trash2 } from "lucide-react";
 
 import {
   AlertDialog,
@@ -15,6 +15,18 @@ import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { Separator } from "../../components/ui/separator";
+import {
+  formatBytes,
+  isLlmRunMetrics,
+  llmAdapterSizeSeries,
+  llmPerplexitySeries,
+  llmRounds,
+  llmThroughputSeries,
+  llmTrainLossSeries,
+  llmValidationLossSeries,
+  selectedClientsText,
+  shortHash,
+} from "../../features/simulation/llm-metrics";
 import { fmt } from "../../lib/time";
 import type { Run, RunLog, SimulationPageProps } from "../types";
 
@@ -41,6 +53,7 @@ export function SimulationRunsTab(props: SimulationPageProps) {
     notifyError,
     runLogs,
     runLogsRef,
+    runMetrics,
     runRounds,
     runStatusVariant,
     runs,
@@ -51,6 +64,12 @@ export function SimulationRunsTab(props: SimulationPageProps) {
     toDisplayText,
     toNumber,
   } = props;
+  const isLlmRun = isLlmRunMetrics(runMetrics);
+  const llmMetricRounds = llmRounds(runMetrics);
+  const llmDataset = runMetrics.llm_dataset ?? {};
+  const llmEvaluation = runMetrics.llm_evaluation ?? {};
+  const llmRuntime = runMetrics.llm_runtime ?? {};
+  const llmArtifacts = runMetrics.llm_artifacts ?? [];
 
   return (
     <div className="grid min-h-[calc(100vh-180px)] gap-4 xl:grid-cols-[330px_minmax(0,1fr)]">
@@ -224,28 +243,54 @@ export function SimulationRunsTab(props: SimulationPageProps) {
                   Experiment Context
                 </p>
                 <div className="grid gap-3 xl:grid-cols-2">
-                  <Card className="border-blue-200/60 bg-blue-50/40 dark:border-blue-900/40 dark:bg-blue-950/20">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm">Basic Context</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-2 text-sm">
-                      <div>
-                        <p className="text-xs text-muted-foreground">Dataset</p>
-                        <p>{toDisplayText(experimentBasic.dataset_name)}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground">Distribution</p>
-                        <p>
-                          {toDisplayText(experimentBasic.distribution)}
-                          {toNumber(experimentBasic.alpha) !== null ? ` (alpha=${toNumber(experimentBasic.alpha)})` : ""}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground">Model</p>
-                        <p>{toDisplayText(experimentBasic.model_name)}</p>
-                      </div>
-                    </CardContent>
-                  </Card>
+                  {!isLlmRun && (
+                    <Card className="border-blue-200/60 bg-blue-50/40 dark:border-blue-900/40 dark:bg-blue-950/20">
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm">Basic Context</CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-2 text-sm">
+                        <div>
+                          <p className="text-xs text-muted-foreground">Dataset</p>
+                          <p>{toDisplayText(experimentBasic.dataset_name)}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Distribution</p>
+                          <p>
+                            {toDisplayText(experimentBasic.distribution)}
+                            {toNumber(experimentBasic.alpha) !== null ? ` (alpha=${toNumber(experimentBasic.alpha)})` : ""}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Model</p>
+                          <p>{toDisplayText(experimentBasic.model_name)}</p>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {isLlmRun && (
+                    <Card className="border-blue-200/60 bg-blue-50/40 dark:border-blue-900/40 dark:bg-blue-950/20">
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm">LLM Context</CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-2 text-sm">
+                        <div>
+                          <p className="text-xs text-muted-foreground">Base Model</p>
+                          <p className="break-all">{toDisplayText(experimentBasic.base_model)}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">SFT / PEFT</p>
+                          <p>
+                            {toDisplayText(experimentBasic.sft_format)} / {toDisplayText(experimentBasic.peft_method)}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Runtime</p>
+                          <p>{toDisplayText(llmRuntime.status)}</p>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
 
                   <Card className="border-indigo-200/60 bg-indigo-50/40 dark:border-indigo-900/40 dark:bg-indigo-950/20">
                     <CardHeader className="pb-2">
@@ -275,7 +320,8 @@ export function SimulationRunsTab(props: SimulationPageProps) {
                     </CardContent>
                   </Card>
 
-                  <Card className="border-emerald-200/60 bg-emerald-50/40 dark:border-emerald-900/40 dark:bg-emerald-950/20">
+                  {!isLlmRun && (
+                    <Card className="border-emerald-200/60 bg-emerald-50/40 dark:border-emerald-900/40 dark:bg-emerald-950/20">
                     <CardHeader className="pb-2">
                       <CardTitle className="text-sm">Security</CardTitle>
                     </CardHeader>
@@ -294,6 +340,53 @@ export function SimulationRunsTab(props: SimulationPageProps) {
                       </div>
                     </CardContent>
                   </Card>
+                  )}
+
+                  {isLlmRun && (
+                    <Card className="border-cyan-200/60 bg-cyan-50/40 dark:border-cyan-900/40 dark:bg-cyan-950/20">
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm">SFT Dataset</CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-2 text-sm">
+                        <div>
+                          <p className="text-xs text-muted-foreground">Records</p>
+                          <p>{toDisplayText(llmDataset.num_records)}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Client Split</p>
+                          <p className="break-all">
+                            {Array.isArray(llmDataset.client_record_counts) ? llmDataset.client_record_counts.join(", ") : "-"}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Prompt Template</p>
+                          <p>{toDisplayText(llmDataset.prompt_template)}</p>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {isLlmRun && (
+                    <Card className="border-amber-200/60 bg-amber-50/40 dark:border-amber-900/40 dark:bg-amber-950/20">
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm">Evaluation</CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-2 text-sm">
+                        <div>
+                          <p className="text-xs text-muted-foreground">Status</p>
+                          <p>{Boolean(llmEvaluation.enabled) ? "Enabled" : "Disabled"}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Validation Records</p>
+                          <p>{toDisplayText(llmEvaluation.num_records)}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Last Validation Loss</p>
+                          <p>{toDisplayText(llmEvaluation.last_validation_loss)}</p>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
                 </div>
               </div>
 
@@ -321,47 +414,138 @@ export function SimulationRunsTab(props: SimulationPageProps) {
               <div className="space-y-2">
                 <p className="flex items-center gap-2 text-xs text-muted-foreground">
                   <BarChart3 className="h-4 w-4" />
-                  Training Curves
+                  {isLlmRun ? "LLM Training Curves" : "Training Curves"}
                 </p>
-                <div className="grid gap-3 xl:grid-cols-2">
-                  <MiniLineChart
-                    title="Global Accuracy"
-                    xValues={runRounds}
-                    series={globalAccuracySeries}
-                    formatter={(value: number) => `${(value * 100).toFixed(2)}%`}
-                  />
-                  <MiniLineChart
-                    title="Global Loss"
-                    xValues={runRounds}
-                    series={globalLossSeries}
-                    formatter={(value: number) => value.toFixed(4)}
-                  />
-                  <MiniLineChart
-                    title="Client Train Acc"
-                    xValues={runRounds}
-                    series={clientTrainAccSeries}
-                    formatter={(value: number) => `${(value * 100).toFixed(2)}%`}
-                  />
-                  <MiniLineChart
-                    title="Client Train Loss"
-                    xValues={runRounds}
-                    series={clientTrainLossSeries}
-                    formatter={(value: number) => value.toFixed(4)}
-                  />
-                  <MiniLineChart
-                    title="Client Test Acc"
-                    xValues={runRounds}
-                    series={clientTestAccSeries}
-                    formatter={(value: number) => `${(value * 100).toFixed(2)}%`}
-                  />
-                  <MiniLineChart
-                    title="Client Test Loss"
-                    xValues={runRounds}
-                    series={clientTestLossSeries}
-                    formatter={(value: number) => value.toFixed(4)}
-                  />
-                </div>
+                {!isLlmRun && (
+                  <div className="grid gap-3 xl:grid-cols-2">
+                    <MiniLineChart
+                      title="Global Accuracy"
+                      xValues={runRounds}
+                      series={globalAccuracySeries}
+                      formatter={(value: number) => `${(value * 100).toFixed(2)}%`}
+                    />
+                    <MiniLineChart
+                      title="Global Loss"
+                      xValues={runRounds}
+                      series={globalLossSeries}
+                      formatter={(value: number) => value.toFixed(4)}
+                    />
+                    <MiniLineChart
+                      title="Client Train Acc"
+                      xValues={runRounds}
+                      series={clientTrainAccSeries}
+                      formatter={(value: number) => `${(value * 100).toFixed(2)}%`}
+                    />
+                    <MiniLineChart
+                      title="Client Train Loss"
+                      xValues={runRounds}
+                      series={clientTrainLossSeries}
+                      formatter={(value: number) => value.toFixed(4)}
+                    />
+                    <MiniLineChart
+                      title="Client Test Acc"
+                      xValues={runRounds}
+                      series={clientTestAccSeries}
+                      formatter={(value: number) => `${(value * 100).toFixed(2)}%`}
+                    />
+                    <MiniLineChart
+                      title="Client Test Loss"
+                      xValues={runRounds}
+                      series={clientTestLossSeries}
+                      formatter={(value: number) => value.toFixed(4)}
+                    />
+                  </div>
+                )}
+                {isLlmRun && (
+                  <div className="grid gap-3 xl:grid-cols-2">
+                    <MiniLineChart
+                      title="LLM Train Loss"
+                      xValues={llmMetricRounds}
+                      series={llmTrainLossSeries(runMetrics)}
+                      formatter={(value: number) => value.toFixed(4)}
+                    />
+                    <MiniLineChart
+                      title="LLM Validation Loss"
+                      xValues={llmMetricRounds}
+                      series={llmValidationLossSeries(runMetrics)}
+                      formatter={(value: number) => value.toFixed(4)}
+                      emptyMessage="No validation data available."
+                    />
+                    <MiniLineChart
+                      title="Perplexity"
+                      xValues={llmMetricRounds}
+                      series={llmPerplexitySeries(runMetrics)}
+                      formatter={(value: number) => value.toFixed(2)}
+                    />
+                    <MiniLineChart
+                      title="Token Throughput"
+                      xValues={llmMetricRounds}
+                      series={llmThroughputSeries(runMetrics)}
+                      formatter={(value: number) => `${value.toFixed(1)} tok/s`}
+                    />
+                    <MiniLineChart
+                      title="Adapter Size"
+                      xValues={llmMetricRounds}
+                      series={llmAdapterSizeSeries(runMetrics)}
+                      formatter={(value: number) => formatBytes(value)}
+                    />
+                    <MiniLineChart
+                      title="Client Train Loss"
+                      xValues={llmMetricRounds}
+                      series={clientTrainLossSeries}
+                      formatter={(value: number) => value.toFixed(4)}
+                    />
+                  </div>
+                )}
               </div>
+
+              {isLlmRun && (
+                <div className="space-y-2">
+                  <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <GitBranch className="h-4 w-4" />
+                    Adapter Lineage
+                  </p>
+                  <div className="overflow-auto rounded-md border">
+                    <table className="w-full min-w-[720px] text-left text-xs">
+                      <thead className="border-b bg-muted/40 text-muted-foreground">
+                        <tr>
+                          <th className="px-3 py-2 font-medium">Round</th>
+                          <th className="px-3 py-2 font-medium">Selected Clients</th>
+                          <th className="px-3 py-2 font-medium">Size</th>
+                          <th className="px-3 py-2 font-medium">SHA-256</th>
+                          <th className="px-3 py-2 font-medium">Parent</th>
+                          <th className="px-3 py-2 font-medium">Path</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {llmArtifacts.map((artifact, index) => (
+                          <tr key={`${artifact.path ?? index}`} className="border-b last:border-none">
+                            <td className="px-3 py-2 font-mono">{toDisplayText(artifact.round)}</td>
+                            <td className="px-3 py-2 font-mono">{selectedClientsText(artifact.selected_clients)}</td>
+                            <td className="px-3 py-2 font-mono">{formatBytes(artifact.size_bytes)}</td>
+                            <td className="px-3 py-2 font-mono" title={String(artifact.sha256 ?? "")}>
+                              {shortHash(artifact.sha256)}
+                            </td>
+                            <td className="px-3 py-2 font-mono" title={String(artifact.parent_sha256 ?? "")}>
+                              {shortHash(artifact.parent_sha256)}
+                            </td>
+                            <td className="max-w-[260px] truncate px-3 py-2 font-mono" title={String(artifact.path ?? "")}>
+                              {toDisplayText(artifact.path)}
+                            </td>
+                          </tr>
+                        ))}
+                        {llmArtifacts.length === 0 && (
+                          <tr>
+                            <td colSpan={6} className="px-3 py-6 text-center text-muted-foreground">
+                              No adapter artifacts recorded yet.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
             </>
           )}
         </CardContent>

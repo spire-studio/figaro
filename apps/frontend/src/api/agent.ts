@@ -21,6 +21,42 @@ export type AgentConfigChange = {
   new_value: unknown;
 };
 
+export type AgentHistoryFilters = {
+  q?: string;
+  status?: string;
+  model_name?: string;
+  objective?: AgentOptimizationObjective | "all";
+  best_score_min?: string;
+  best_score_max?: string;
+  created_from?: string;
+  created_to?: string;
+  dataset?: string;
+  config_model?: string;
+  aggregation?: string;
+  num_clients?: string;
+  num_rounds?: string;
+};
+
+export type AgentConfigVersion = {
+  id: number;
+  optimization_job_id: number;
+  run_id: string | null;
+  iteration: number;
+  source: string;
+  label: string;
+  config_hash: string;
+  config_json: Record<string, unknown>;
+  diff_json: AgentConfigChange[];
+  created_at: string;
+};
+
+export type AgentConfigDiffResponse = {
+  optimization_job_id: number;
+  from_version_id: number | null;
+  to_version_id: number;
+  changes: AgentConfigChange[];
+};
+
 export type AgentCurrentPlan = {
   iteration: number;
   iteration_goal: string;
@@ -192,6 +228,33 @@ async function readJson<T>(response: Response): Promise<T> {
   return (await response.json()) as T;
 }
 
+function addOptionalParam(params: URLSearchParams, key: string, value: unknown): void {
+  if (value === undefined || value === null) return;
+  const text = String(value).trim();
+  if (!text || text === "all") return;
+  params.set(key, text);
+}
+
+function historyFiltersToParams(filters?: AgentHistoryFilters): string {
+  const params = new URLSearchParams();
+  if (!filters) return "";
+  addOptionalParam(params, "q", filters.q);
+  addOptionalParam(params, "status", filters.status);
+  addOptionalParam(params, "model_name", filters.model_name);
+  addOptionalParam(params, "objective", filters.objective);
+  addOptionalParam(params, "best_score_min", filters.best_score_min);
+  addOptionalParam(params, "best_score_max", filters.best_score_max);
+  addOptionalParam(params, "created_from", filters.created_from);
+  addOptionalParam(params, "created_to", filters.created_to);
+  addOptionalParam(params, "dataset", filters.dataset);
+  addOptionalParam(params, "config_model", filters.config_model);
+  addOptionalParam(params, "aggregation", filters.aggregation);
+  addOptionalParam(params, "num_clients", filters.num_clients);
+  addOptionalParam(params, "num_rounds", filters.num_rounds);
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
 export const agentApi = {
   async getConfigSchema(): Promise<Record<string, unknown>> {
     const response = await fetch(`${baseUrl}/api/v1/agent/config/schema`);
@@ -226,8 +289,8 @@ export const agentApi = {
     return readJson<AgentOptimizeProgressResponse>(response);
   },
 
-  async listOptimizationJobs(): Promise<AgentOptimizationJobSummary[]> {
-    const response = await fetch(`${baseUrl}/api/v1/agent/optimization-jobs`);
+  async listOptimizationJobs(filters?: AgentHistoryFilters): Promise<AgentOptimizationJobSummary[]> {
+    const response = await fetch(`${baseUrl}/api/v1/agent/optimization-jobs${historyFiltersToParams(filters)}`);
     return readJson<AgentOptimizationJobSummary[]>(response);
   },
 
@@ -302,5 +365,19 @@ export const agentApi = {
       throw new Error(err.detail || "Failed to revise plan");
     }
     return response.json();
+  },
+
+  async listConfigVersions(optimizationJobId: number): Promise<AgentConfigVersion[]> {
+    const response = await fetch(`${baseUrl}/api/v1/agent/optimization-jobs/${encodeURIComponent(optimizationJobId)}/config-versions`);
+    return readJson<AgentConfigVersion[]>(response);
+  },
+
+  async getConfigDiff(optimizationJobId: number, toVersionId: number, fromVersionId?: number | null): Promise<AgentConfigDiffResponse> {
+    const params = new URLSearchParams({ to_version_id: String(toVersionId) });
+    if (fromVersionId != null) {
+      params.set("from_version_id", String(fromVersionId));
+    }
+    const response = await fetch(`${baseUrl}/api/v1/agent/optimization-jobs/${encodeURIComponent(optimizationJobId)}/config-diff?${params.toString()}`);
+    return readJson<AgentConfigDiffResponse>(response);
   },
 };

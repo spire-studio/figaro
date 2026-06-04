@@ -67,6 +67,30 @@ class AgentConfigChangeResponse(BaseModel):
     new_value: Any = None
 
 
+class AgentConfigVersionResponse(BaseModel):
+    """One persisted config version for a historical Agent optimization."""
+
+    id: int
+    optimization_job_id: int
+    run_id: str | None = None
+    iteration: int
+    source: str
+    label: str
+    config_hash: str
+    config_json: dict[str, Any] = Field(default_factory=dict)
+    diff_json: list[AgentConfigChangeResponse] = Field(default_factory=list)
+    created_at: datetime
+
+
+class AgentConfigDiffResponse(BaseModel):
+    """Diff payload between two persisted config versions."""
+
+    optimization_job_id: int
+    from_version_id: int | None = None
+    to_version_id: int
+    changes: list[AgentConfigChangeResponse] = Field(default_factory=list)
+
+
 class AgentCurrentPlanResponse(BaseModel):
     """Planner output for the iteration currently being prepared or executed."""
 
