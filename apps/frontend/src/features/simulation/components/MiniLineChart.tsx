@@ -7,16 +7,29 @@ type MiniLineChartProps = {
   xValues: number[];
   series: LineSeries[];
   formatter?: (value: number) => string;
+  emptyMessage?: string;
 };
 
-export function MiniLineChart({ title, xValues, series, formatter }: MiniLineChartProps) {
+function isFinitePoint(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function latestFiniteValue(values: Array<number | null | undefined>): number | null {
+  for (let index = values.length - 1; index >= 0; index -= 1) {
+    const value = values[index];
+    if (isFinitePoint(value)) return value;
+  }
+  return null;
+}
+
+export function MiniLineChart({ title, xValues, series, formatter, emptyMessage = "Waiting for training metrics..." }: MiniLineChartProps) {
   const chartWidth = 520;
   const chartHeight = 220;
   const margin = { top: 12, right: 14, bottom: 36, left: 58 };
   const plotWidth = chartWidth - margin.left - margin.right;
   const plotHeight = chartHeight - margin.top - margin.bottom;
   const maxSeriesLength = Math.max(xValues.length, ...series.map((item) => item.values.length));
-  const hasData = maxSeriesLength > 0 && series.some((item) => item.values.length > 0);
+  const hasData = maxSeriesLength > 0 && series.some((item) => item.values.some(isFinitePoint));
   const bounds = getLineSeriesBounds(series);
   const formatValue = formatter ?? ((value: number) => value.toFixed(4));
   const yTickCount = 5;
@@ -41,7 +54,7 @@ export function MiniLineChart({ title, xValues, series, formatter }: MiniLineCha
         <CardTitle className="text-sm">{title}</CardTitle>
       </CardHeader>
       <CardContent className="space-y-2">
-        {!hasData && <p className="text-xs text-muted-foreground">Waiting for training metrics...</p>}
+        {!hasData && <p className="text-xs text-muted-foreground">{emptyMessage}</p>}
         {hasData && (
           <>
             <div className="rounded-md border bg-muted/20 p-2">
@@ -169,6 +182,7 @@ export function MiniLineChart({ title, xValues, series, formatter }: MiniLineCha
                         />
                       )}
                       {item.values.map((value, index) => {
+                        if (!isFinitePoint(value)) return null;
                         const x = maxSeriesLength <= 1 ? margin.left + plotWidth / 2 : margin.left + xStep * index;
                         const normalized = (value - bounds.min) / ySpan;
                         const y = margin.top + (plotHeight - normalized * plotHeight);
@@ -181,12 +195,12 @@ export function MiniLineChart({ title, xValues, series, formatter }: MiniLineCha
             </div>
             <div className="flex flex-wrap items-center gap-2 text-xs">
               {series.map((item) => {
-                const latestValue = item.values[item.values.length - 1];
+                const latestValue = latestFiniteValue(item.values);
                 return (
                   <span key={`legend-${item.key}`} className="inline-flex items-center gap-1.5 rounded-md border bg-muted/20 px-2 py-1">
                     <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: item.color }} />
                     <span className="font-medium">{item.label}</span>
-                    <span className="text-muted-foreground">{latestValue === undefined ? "-" : formatValue(latestValue)}</span>
+                    <span className="text-muted-foreground">{latestValue === null ? "-" : formatValue(latestValue)}</span>
                   </span>
                 );
               })}

@@ -15,15 +15,18 @@ import { Textarea } from "../../../components/ui/textarea";
 import type { AgentPageProps } from "../../../pages/types";
 import { getValueByPath, isRecord } from "../../simulation/utils";
 import {
+  applyConfigConstraints,
   booleanDisabledForConfig,
   booleanDisableReasonForConfig,
   agentFieldVisibleForConfig,
   buildAgentConfig,
   coerceFieldValue,
   collectAgentSchemaFields,
+  fieldEmptyMessage,
   fieldCompatibilityHint,
   formatFieldValue,
   inferSftSettingsForDatasetPath,
+  materializeAgentConfigConstraints,
   optionDisableReasonForConfig,
   optionDisabledForConfig,
   optionLabel,
@@ -67,6 +70,7 @@ export function AgentPlanPreview(props: AgentPageProps) {
 
   if (!draftPlan) return null;
   const isBusy = globalBusy || isRevising;
+  const lockedConstraints = materializeAgentConfigConstraints(configSchema, draftPlan.config_constraints ?? {});
 
   const handleRevise = async () => {
     if (!instruction.trim() || !draftPlan.job_id) return;
@@ -144,7 +148,10 @@ export function AgentPlanPreview(props: AgentPageProps) {
     }
 
     const disabledErrors = localExperiments.flatMap((exp) =>
-      validateDisabledOptions(buildAgentConfig(configSchema, exp.config_patch ?? {}), configSchema),
+      validateDisabledOptions(
+        buildAgentConfig(configSchema, applyConfigConstraints(exp.config_patch ?? {}, lockedConstraints)),
+        configSchema,
+      ),
     );
     if (disabledErrors.length > 0) {
       toast.error(disabledErrors[0]);
@@ -153,7 +160,10 @@ export function AgentPlanPreview(props: AgentPageProps) {
 
     const cleanExperiments = localExperiments.map((exp) => {
       const { _rawJsonString, _jsonError, _activeTab, ...rest } = exp;
-      return rest;
+      return {
+        ...rest,
+        config_patch: applyConfigConstraints(rest.config_patch ?? {}, lockedConstraints),
+      };
     });
     void handleExecutePlan(cleanExperiments);
   };
@@ -221,6 +231,7 @@ export function AgentPlanPreview(props: AgentPageProps) {
                 disabled={isBusy}
                 experiment={exp}
                 index={idx}
+                lockedConstraints={lockedConstraints}
                 schema={configSchema}
                 fields={schemaFields}
                 onConfigChange={(path, value) => handleFormConfigChange(idx, path, value)}
@@ -249,6 +260,7 @@ function ExperimentCard({
   experiment,
   fields,
   index,
+  lockedConstraints,
   onConfigChange,
   onJsonChange,
   onTabChange,
@@ -258,19 +270,21 @@ function ExperimentCard({
   experiment: LocalExperiment;
   fields: AgentSchemaField[];
   index: number;
+  lockedConstraints: Record<string, unknown>;
   onConfigChange: (path: string, value: unknown) => void;
   onJsonChange: (text: string) => void;
   onTabChange: (tab: "form" | "json") => void;
   schema: Record<string, unknown> | null;
 }) {
-  const fullConfig = buildAgentConfig(schema, experiment.config_patch ?? {});
+  const effectivePatch = applyConfigConstraints(experiment.config_patch ?? {}, lockedConstraints);
+  const fullConfig = buildAgentConfig(schema, effectivePatch);
   const visibleFields = fields.filter((field) => agentFieldVisibleForConfig(field, fullConfig));
   const grouped = visibleFields.reduce<Record<string, AgentSchemaField[]>>((acc, field) => {
     const section = field.section;
     acc[section] = [...(acc[section] ?? []), field];
     return acc;
   }, {});
-  const jsonString = experiment._rawJsonString ?? JSON.stringify(experiment.config_patch ?? {}, null, 2);
+  const jsonString = experiment._rawJsonString ?? JSON.stringify(effectivePatch, null, 2);
   const disabledErrors = validateDisabledOptions(fullConfig, schema);
   const summaryFields = fields
     .filter((field) => field.featured && agentFieldVisibleForConfig(field, fullConfig))
@@ -367,11 +381,15 @@ function SchemaFieldControl({
   const textValue = formatFieldValue(value);
   const selectedTextOption = textOptions.includes(textValue) ? textValue : "";
   const customTextOption = textValue !== "-" && selectedTextOption === "" ? textValue : null;
+  const emptyMessage = field.options.length === 0 ? fieldEmptyMessage(field) : null;
 
   return (
     <div className="space-y-1 rounded-md border border-border/70 bg-background/60 p-2">
       <p className="text-xs text-muted-foreground">{field.label}</p>
       {field.type === "select" && (
+        emptyMessage ? (
+          <Input className="font-mono text-muted-foreground" disabled value={emptyMessage} />
+        ) : (
         <Select value={String(value ?? "")} onValueChange={onChange} disabled={disabled}>
           <SelectTrigger className="font-mono">
             <SelectValue placeholder="Select option" />
@@ -400,6 +418,7 @@ function SchemaFieldControl({
             })}
           </SelectContent>
         </Select>
+        )
       )}
       {field.type === "number" && (
         <NumberStepper
@@ -419,7 +438,9 @@ function SchemaFieldControl({
         </div>
       )}
       {field.type !== "select" && field.type !== "number" && field.type !== "bool" && (
-        textOptions.length > 0 ? (
+        emptyMessage ? (
+          <Input className="font-mono text-muted-foreground" disabled value={emptyMessage} />
+        ) : textOptions.length > 0 ? (
           <Select value={customTextOption ?? selectedTextOption} onValueChange={onChange} disabled={disabled}>
             <SelectTrigger
               className="font-mono overflow-hidden [&>span]:block [&>span]:truncate [&>span]:whitespace-nowrap"

@@ -3,6 +3,7 @@ import { Activity, Bot, TerminalSquare, CheckCircle2, CircleDashed, LayoutGrid }
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../../../components/ui/card";
 import { Separator } from "../../../components/ui/separator";
 import { MiniLineChart } from "../../simulation/components/MiniLineChart";
+import { toClientSeries } from "../../simulation/utils";
 import { fmt } from "../../../lib/time";
 import type { AgentPageProps } from "../../../pages/types";
 import { baseUrl } from "../../../../src/api/client";
@@ -78,7 +79,6 @@ export function AgentRunDashboard({ progress }: AgentPageProps) {
   const metrics = liveMetrics || activeExpMetadata?.metrics || {};
   const isLlmRun = isLlmRunMetrics(metrics);
   const globalResults = metrics.global_results || {};
-  const clientResults = metrics.client_results || {};
   const actualDataLength = isLlmRun
     ? (metrics.llm_results?.rounds?.length || metrics.llm_results?.train_loss?.length || 0)
     : (globalResults.global_accuracy?.length || 0);
@@ -101,31 +101,17 @@ export function AgentRunDashboard({ progress }: AgentPageProps) {
     values: safeSlice(globalResults.global_loss) 
   }];
 
-  const clientIds = Object.keys(clientResults);
-  
   // 3. Client Train Acc
-  const clientTrainAccSeries = clientIds.map((cId, idx) => ({
-    key: `${cId}_train_acc`, label: cId, color: CHART_COLORS[(idx + 1) % CHART_COLORS.length],
-    values: safeSlice(clientResults[cId].train_acc)
-  }));
+  const clientTrainAccSeries = toClientSeries(metrics, "train_acc", rounds);
 
   // 4. Client Train Loss
-  const clientTrainLossSeries = clientIds.map((cId, idx) => ({
-    key: `${cId}_train_loss`, label: cId, color: CHART_COLORS[(idx + 1) % CHART_COLORS.length],
-    values: safeSlice(clientResults[cId].train_loss)
-  }));
+  const clientTrainLossSeries = toClientSeries(metrics, "train_loss", rounds);
 
   // 5. Client Test Acc
-  const clientTestAccSeries = clientIds.map((cId, idx) => ({
-    key: `${cId}_test_acc`, label: cId, color: CHART_COLORS[(idx + 1) % CHART_COLORS.length],
-    values: safeSlice(clientResults[cId].test_acc)
-  }));
+  const clientTestAccSeries = toClientSeries(metrics, "test_acc", rounds);
 
   // 6. Client Test Loss
-  const clientTestLossSeries = clientIds.map((cId, idx) => ({
-    key: `${cId}_test_loss`, label: cId, color: CHART_COLORS[(idx + 1) % CHART_COLORS.length],
-    values: safeSlice(clientResults[cId].test_loss)
-  }));
+  const clientTestLossSeries = toClientSeries(metrics, "test_loss", rounds);
 
   return (
     <div className="grid h-full gap-4 xl:grid-cols-[240px_1fr_300px]">
@@ -234,7 +220,7 @@ export function AgentRunDashboard({ progress }: AgentPageProps) {
               <MiniLineChart title="LLM Train Loss" xValues={rounds} series={llmTrainLossSeries(metrics)} formatter={(v: number) => v.toFixed(4)} />
             </CardContent></Card>
             <Card className="shadow-sm"><CardContent className="p-4">
-              <MiniLineChart title="LLM Validation Loss" xValues={rounds} series={llmValidationLossSeries(metrics)} formatter={(v: number) => v.toFixed(4)} />
+              <MiniLineChart title="LLM Validation Loss" xValues={rounds} series={llmValidationLossSeries(metrics)} formatter={(v: number) => v.toFixed(4)} emptyMessage="No validation data available." />
             </CardContent></Card>
             <Card className="shadow-sm"><CardContent className="p-4">
               <MiniLineChart title="Perplexity" xValues={rounds} series={llmPerplexitySeries(metrics)} formatter={(v: number) => v.toFixed(2)} />

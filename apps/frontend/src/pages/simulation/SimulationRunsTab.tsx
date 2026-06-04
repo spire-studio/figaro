@@ -469,6 +469,7 @@ export function SimulationRunsTab(props: SimulationPageProps) {
                       xValues={llmMetricRounds}
                       series={llmValidationLossSeries(runMetrics)}
                       formatter={(value: number) => value.toFixed(4)}
+                      emptyMessage="No validation data available."
                     />
                     <MiniLineChart
                       title="Perplexity"

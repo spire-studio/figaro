@@ -82,6 +82,7 @@ class SimulationRunLlmResults(BaseModel):
 class SimulationRunClientSeries(BaseModel):
     """Per-client metric series in simulation mode."""
 
+    rounds: list[int] = Field(default_factory=list)
     train_loss: list[float] = Field(default_factory=list)
     train_acc: list[float] = Field(default_factory=list)
     test_loss: list[float] = Field(default_factory=list)

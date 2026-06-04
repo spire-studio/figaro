@@ -4,6 +4,7 @@ import { getHttpErrorMessage } from "./error";
 type Run = components["schemas"]["RunResponse"];
 
 export type RunClientMetricSeries = {
+  rounds?: number[];
   train_loss: number[];
   train_acc: number[];
   test_loss: number[];

@@ -32,6 +32,7 @@ from .planning import (
     collect_disabled_option_errors,
     deep_merge_config,
     lock_structured_constraints,
+    merge_llm_resource_constraints,
     select_llm_model,
 )
 from .prompts import build_plan_prompt, build_plan_system_instructions
@@ -87,6 +88,7 @@ class FederatedAgentGraphBuilder:
         constrained_base = experiment_service.normalize_simulation_config(
             deep_merge_config(base_config, state.config_constraints)
         )
+        effective_constraints = merge_llm_resource_constraints(constrained_base, state.config_constraints)
         disabled_errors = collect_disabled_option_errors(constrained_base, schema)
         if disabled_errors:
             raise exceptions.BadRequestError("; ".join(disabled_errors))
@@ -100,7 +102,7 @@ class FederatedAgentGraphBuilder:
                     raw_config = {}
                 merged = lock_structured_constraints(
                     deep_merge_config(constrained_base, raw_config),
-                    state.config_constraints,
+                    effective_constraints,
                 )
                 normalized = experiment_service.normalize_simulation_config(
                     merged
@@ -132,7 +134,7 @@ class FederatedAgentGraphBuilder:
             capabilities=capabilities,
             base_config=constrained_base,
             schema_context=schema_context,
-            config_constraints=state.config_constraints,
+            config_constraints=effective_constraints,
         )
 
         logger.info("llm input instructions=%s", instructions)
@@ -174,7 +176,7 @@ class FederatedAgentGraphBuilder:
                         # structured controls so prompt drift cannot override them.
                         merged = lock_structured_constraints(
                             deep_merge_config(constrained_base, patch_config),
-                            state.config_constraints,
+                            effective_constraints,
                         )
                         try:
                             normalized = experiment_service.normalize_simulation_config(merged)
@@ -231,6 +233,7 @@ class FederatedAgentGraphBuilder:
         base_config = experiment_service.normalize_simulation_config(
             deep_merge_config(build_initial_config(schema), state.config_constraints)
         )
+        effective_constraints = merge_llm_resource_constraints(base_config, state.config_constraints)
 
         max_wait_seconds = 3600
         poll_interval = 2
@@ -243,7 +246,7 @@ class FederatedAgentGraphBuilder:
             # -- Build config --
             merged = lock_structured_constraints(
                 deep_merge_config(base_config, plan.config_patch),
-                state.config_constraints,
+                effective_constraints,
             )
             config = experiment_service.normalize_simulation_config(merged)
             disabled_errors = collect_disabled_option_errors(config, schema)

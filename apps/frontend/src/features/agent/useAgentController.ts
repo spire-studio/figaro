@@ -14,7 +14,15 @@ import {
 import type { AgentPageProps, AgentWorkflowStep, AgentPlanDraft } from "../../pages/types";
 import { latestLlmLoss } from "../simulation/llm-metrics";
 import { toErrorMessage } from "../simulation/utils";
-import { inferSftSettingsForDatasetPath, removeValueByPath, setConfigValue } from "./schema";
+import {
+  buildAgentConfig,
+  applyConfigConstraints,
+  inferSftSettingsForDatasetPath,
+  materializeAgentConfigConstraints,
+  missingLlmResourceMessages,
+  removeValueByPath,
+  setConfigValue,
+} from "./schema";
 
 const DEFAULT_GOAL = "Compare non-IID alpha=0.1, 0.3, 0.5 on the selected dataset";
 const POLL_INTERVAL_MS = 1500;
@@ -187,6 +195,15 @@ export function useAgentController(): AgentPageProps {
       toast.warning("Please provide a job name.");
       return;
     }
+    const submissionConstraints = materializeAgentConfigConstraints(configSchema, configConstraints);
+    const missingResources = missingLlmResourceMessages(
+      configSchema,
+      buildAgentConfig(configSchema, submissionConstraints),
+    );
+    if (missingResources.length > 0) {
+      toast.error(missingResources.join(", "));
+      return;
+    }
   
     setBusy(true);
     try {
@@ -195,14 +212,14 @@ export function useAgentController(): AgentPageProps {
         job_name: trimmedJobName,
         model_name: modelName.trim().length > 0 ? modelName.trim() : null,
         system_mode: "simulation",
-        config_constraints: configConstraints,
+        config_constraints: submissionConstraints,
       });
   
       setDraftPlan({
         job_id: data.optimization_job_id!,
         goal: data.goal,
         experiments: data.experiments,
-        config_constraints: data.config_constraints ?? configConstraints,
+        config_constraints: data.config_constraints ?? submissionConstraints,
       });
       
       setWorkflowStep("preview");
@@ -216,6 +233,20 @@ export function useAgentController(): AgentPageProps {
   
   async function handleExecutePlan(editedExperiments: any[]): Promise<void> {
     if (!draftPlan) return;
+    const submissionConstraints = materializeAgentConfigConstraints(
+      configSchema,
+      draftPlan.config_constraints ?? configConstraints,
+    );
+    const disabledResources = editedExperiments.flatMap((exp) =>
+      missingLlmResourceMessages(
+        configSchema,
+        buildAgentConfig(configSchema, applyConfigConstraints(exp.config_patch ?? {}, submissionConstraints)),
+      ),
+    );
+    if (disabledResources.length > 0) {
+      toast.error(Array.from(new Set(disabledResources)).join(", "));
+      return;
+    }
     
     setBusy(true);
     setResult(null);
@@ -230,7 +261,7 @@ export function useAgentController(): AgentPageProps {
         model_name: modelName.trim().length > 0 ? modelName.trim() : null,
         objective: objective,
         planned_experiments: editedExperiments, // Bypass LLM parse in backend
-        config_constraints: draftPlan.config_constraints ?? configConstraints,
+        config_constraints: submissionConstraints,
       });
       
       setProgress(data);
@@ -258,6 +289,15 @@ export function useAgentController(): AgentPageProps {
       toast.warning("Please provide a job name for this experiment.");
       return;
     }
+    const submissionConstraints = materializeAgentConfigConstraints(configSchema, configConstraints);
+    const missingResources = missingLlmResourceMessages(
+      configSchema,
+      buildAgentConfig(configSchema, submissionConstraints),
+    );
+    if (missingResources.length > 0) {
+      toast.error(missingResources.join(", "));
+      return;
+    }
 
     setBusy(true);
     setResult(null);
@@ -271,7 +311,7 @@ export function useAgentController(): AgentPageProps {
         model_name: modelName.trim().length > 0 ? modelName.trim() : null,
         job_name: trimmedJobName,
         objective,
-        config_constraints: configConstraints,
+        config_constraints: submissionConstraints,
       });
       setProgress(data);
       setActiveTaskId(data.task_id);

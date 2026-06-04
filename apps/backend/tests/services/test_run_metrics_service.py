@@ -20,6 +20,15 @@ def test_normalize_metrics_payload_preserves_llm_sections():
             "llm_evaluation": {"enabled": True, "num_records": 4},
             "llm_runtime": {"status": "blocked"},
             "llm_artifacts": [{"round": 1, "path": "adapter.pt"}, "not-an-object"],
+            "client_results": {
+                "client_0": {
+                    "rounds": [1, "3"],
+                    "train_loss": [1.0, 0.8],
+                    "train_acc": [],
+                    "test_loss": [],
+                    "test_acc": [],
+                }
+            },
         }
     )
 
@@ -29,3 +38,4 @@ def test_normalize_metrics_payload_preserves_llm_sections():
     assert normalized["llm_evaluation"]["num_records"] == 4
     assert normalized["llm_runtime"]["status"] == "blocked"
     assert normalized["llm_artifacts"] == [{"round": 1, "path": "adapter.pt"}]
+    assert normalized["client_results"]["client_0"]["rounds"] == [1, 3]

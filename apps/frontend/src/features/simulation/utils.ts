@@ -494,7 +494,9 @@ export function topologyFromConfig(
 }
 
 export function getLineSeriesBounds(series: LineSeries[]): { min: number; max: number } {
-  const values = series.flatMap((item) => item.values).filter((value) => Number.isFinite(value));
+  const values = series
+    .flatMap((item) => item.values)
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
   if (values.length === 0) {
     return { min: 0, max: 1 };
   }
@@ -509,7 +511,14 @@ export function getLineSeriesBounds(series: LineSeries[]): { min: number; max: n
   return { min: min - padding, max: max + padding };
 }
 
-export function polylinePoints(values: number[], pointsCount: number, yMin: number, yMax: number, width: number, height: number): string {
+export function polylinePoints(
+  values: Array<number | null | undefined>,
+  pointsCount: number,
+  yMin: number,
+  yMax: number,
+  width: number,
+  height: number,
+): string {
   if (values.length === 0 || pointsCount <= 1) {
     return "";
   }
@@ -519,11 +528,15 @@ export function polylinePoints(values: number[], pointsCount: number, yMin: numb
 
   return values
     .map((value, index) => {
+      if (typeof value !== "number" || !Number.isFinite(value)) {
+        return null;
+      }
       const x = xStep * index;
       const normalized = (value - yMin) / ySpan;
       const y = height - normalized * height;
       return `${x.toFixed(2)},${y.toFixed(2)}`;
     })
+    .filter((point): point is string => point !== null)
     .join(" ");
 }
 
@@ -533,13 +546,78 @@ function parseClientOrder(clientName: string): number {
   return Number(match[1]);
 }
 
-export function toClientSeries(metrics: RunMetrics, key: keyof RunMetrics["client_results"][string]): LineSeries[] {
+function numericRoundList(value: unknown): number[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => Number(item)).filter((item) => Number.isFinite(item));
+}
+
+function roundFromArtifact(artifact: Record<string, unknown>, fallback: number): number {
+  const round = Number(artifact.round);
+  return Number.isFinite(round) ? round : fallback;
+}
+
+function clientNumberFromName(clientName: string): number | null {
+  const match = clientName.match(/(\d+)$/);
+  return match ? Number(match[1]) : null;
+}
+
+function inferClientRoundsFromArtifacts(metrics: RunMetrics, clientName: string, valueCount: number): number[] {
+  const clientId = clientNumberFromName(clientName);
+  if (clientId === null || !Array.isArray(metrics.llm_artifacts)) return [];
+  const rounds: number[] = [];
+  for (const [index, artifact] of metrics.llm_artifacts.entries()) {
+    if (!artifact || typeof artifact !== "object" || Array.isArray(artifact)) continue;
+    const selectedClients = (artifact as Record<string, unknown>).selected_clients;
+    if (!Array.isArray(selectedClients)) continue;
+    if (selectedClients.map((item) => Number(item)).includes(clientId)) {
+      rounds.push(roundFromArtifact(artifact as Record<string, unknown>, index + 1));
+    }
+    if (rounds.length >= valueCount) break;
+  }
+  return rounds;
+}
+
+function alignValuesToRounds(
+  values: Array<number | null | undefined>,
+  valueRounds: number[],
+  xValues: number[],
+): Array<number | null> {
+  if (values.length === 0) return [];
+  if (valueRounds.length === 0 || xValues.length === 0) {
+    return values.map((value) => (typeof value === "number" && Number.isFinite(value) ? value : null));
+  }
+
+  const byRound = new Map<number, number | null>();
+  values.forEach((value, index) => {
+    const round = valueRounds[index];
+    if (round === undefined) return;
+    byRound.set(round, typeof value === "number" && Number.isFinite(value) ? value : null);
+  });
+  return xValues.map((round) => byRound.get(round) ?? null);
+}
+
+export function toClientSeries(
+  metrics: RunMetrics | null | undefined,
+  key: keyof Omit<RunMetrics["client_results"][string], "rounds">,
+  xValues?: number[],
+): LineSeries[] {
+  if (!metrics?.client_results) return [];
+
+  const llmRounds = numericRoundList(metrics.llm_results?.rounds);
+  const rounds = xValues ?? (llmRounds.length > 0 ? llmRounds : (metrics.global_results?.rounds ?? []));
   return Object.entries(metrics.client_results)
     .sort(([a], [b]) => parseClientOrder(a) - parseClientOrder(b) || a.localeCompare(b))
-    .map(([clientName, values], index) => ({
-      key: `${key}-${clientName}`,
-      label: clientName,
-      color: CLIENT_SERIES_COLORS[index % CLIENT_SERIES_COLORS.length],
-      values: values[key],
-    }));
+    .map(([clientName, values], index) => {
+      const rawValues = values[key] ?? [];
+      const valueRounds = numericRoundList(values.rounds);
+      const inferredRounds = valueRounds.length > 0
+        ? valueRounds
+        : inferClientRoundsFromArtifacts(metrics, clientName, rawValues.length);
+      return {
+        key: `${key}-${clientName}`,
+        label: clientName,
+        color: CLIENT_SERIES_COLORS[index % CLIENT_SERIES_COLORS.length],
+        values: alignValuesToRounds(rawValues, inferredRounds, rounds),
+      };
+    });
 }

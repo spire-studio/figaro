@@ -18,6 +18,7 @@ import {
   buildAgentConfig,
   coerceFieldValue,
   collectAgentSchemaFields,
+  fieldEmptyMessage,
   fieldCompatibilityHint,
   formatFieldValue,
   optionDisableReasonForConfig,
@@ -231,6 +232,7 @@ function ConstraintField({
   const textValue = formatFieldValue(value);
   const selectedTextOption = textOptions.includes(textValue) ? textValue : "";
   const customTextOption = textValue !== "-" && selectedTextOption === "" ? textValue : null;
+  const emptyMessage = field.options.length === 0 ? fieldEmptyMessage(field) : null;
 
   return (
     <div className="space-y-1 rounded-md border border-border/70 bg-background/60 p-3">
@@ -239,6 +241,9 @@ function ConstraintField({
         <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{field.section}</span>
       </div>
       {field.type === "select" && (
+        emptyMessage ? (
+          <Input className="font-mono text-muted-foreground" value={emptyMessage} disabled />
+        ) : (
         <Select value={String(value ?? "")} onValueChange={onChange}>
           <SelectTrigger className="font-mono">
             <SelectValue placeholder="Select option" />
@@ -267,6 +272,7 @@ function ConstraintField({
             })}
           </SelectContent>
         </Select>
+        )
       )}
       {field.type === "number" && (
         <NumberStepper
@@ -285,7 +291,9 @@ function ConstraintField({
         </div>
       )}
       {field.type !== "select" && field.type !== "number" && field.type !== "bool" && (
-        textOptions.length > 0 ? (
+        emptyMessage ? (
+          <Input className="font-mono text-muted-foreground" value={emptyMessage} disabled />
+        ) : textOptions.length > 0 ? (
           <Select value={customTextOption ?? selectedTextOption} onValueChange={onChange}>
             <SelectTrigger
               className="font-mono overflow-hidden [&>span]:block [&>span]:truncate [&>span]:whitespace-nowrap"

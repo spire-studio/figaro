@@ -22,6 +22,7 @@ from fl_core.llm.artifacts import (
 from fl_core.llm.config import normalize_llm_peft_config, parse_target_modules
 from fl_core.llm.data import SftRecord, format_sft_record_text, load_jsonl_sft_records, load_sft_records, split_records_by_client
 from fl_core.llm.metrics import append_llm_round_metrics, empty_llm_metrics_payload
+from fl_core.llm import trainer as llm_trainer
 from fl_core.llm.trainer import TokenizedSftDataset
 
 
@@ -285,3 +286,10 @@ def test_tokenized_sft_dataset_uses_rendered_text():
     assert item["input_ids"] == [97, 98, 99, 100]
     assert item["labels"] == [-100, -100, -100, 100]
     assert dataset.num_tokens == 4
+
+
+def test_llm_peft_progress_callback_handles_trainer_lifecycle_methods():
+    callback = llm_trainer._LlmPeftProgressCallback(round_num=1, client_id=0, total_steps=100)
+
+    assert callback.on_init_end(None, None, None) is None
+    assert callback.on_train_begin(None, None, None) is None

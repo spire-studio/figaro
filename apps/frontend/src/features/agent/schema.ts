@@ -31,6 +31,7 @@ const AGENT_SECTIONS = new Set([
   "compression",
   "privacy",
 ]);
+const REQUIRED_LLM_RESOURCE_FIELDS = new Set(["llm.base_model", "sft.dataset_path", "evaluation.dataset_path"]);
 
 export type AgentSchemaField = {
   path: string;
@@ -107,6 +108,17 @@ export function booleanDisableReasonForConfig(path: string, value: unknown, conf
 
 export function fieldCompatibilityHint(path: string, config: Record<string, unknown>): string | null {
   return fieldHint(path, config);
+}
+
+export function fieldEmptyMessage(field: AgentSchemaField): string | null {
+  const ui = fieldUi(field.definition);
+  if (typeof ui.empty_message === "string" && ui.empty_message.trim().length > 0) {
+    return ui.empty_message;
+  }
+  if (field.path === "llm.base_model") return "No local models found";
+  if (field.path === "sft.dataset_path") return "No training datasets found";
+  if (field.path === "evaluation.dataset_path") return "No evaluation datasets found";
+  return null;
 }
 
 function isAgentVisible(definition: SchemaNode): boolean {
@@ -189,6 +201,70 @@ export function buildAgentConfig(schema: Record<string, unknown> | null, patch: 
   setValueByPath(config, "system.mode", "simulation");
   setValueByPath(config, "system.node_role", "server");
   return config;
+}
+
+export function applyConfigConstraints(
+  config: Record<string, unknown>,
+  constraints: Record<string, unknown> | null | undefined,
+): Record<string, unknown> {
+  return deepMerge(config, constraints ?? {});
+}
+
+export function materializeAgentConfigConstraints(
+  schema: Record<string, unknown> | null,
+  constraints: Record<string, unknown>,
+): Record<string, unknown> {
+  const config = buildAgentConfig(schema, constraints);
+  if (getValueByPath(config, "task.type") !== "llm_peft_sft") {
+    return constraints;
+  }
+
+  let next = structuredClone(constraints);
+  for (const path of ["task.type", "llm.base_model"]) {
+    const value = getValueByPath(config, path);
+    if (typeof value === "string" && value.trim().length > 0) {
+      setValueByPath(next, path, value);
+    }
+  }
+
+  const datasetPath = getValueByPath(config, "sft.dataset_path");
+  if (typeof datasetPath === "string" && datasetPath.trim().length > 0) {
+    setValueByPath(next, "sft.dataset_path", datasetPath);
+    for (const [inferredPath, inferredValue] of Object.entries(inferSftSettingsForDatasetPath(datasetPath))) {
+      setValueByPath(next, inferredPath, inferredValue);
+    }
+  }
+
+  const evaluationEnabled = getValueByPath(config, "evaluation.enable");
+  if (typeof evaluationEnabled === "boolean") {
+    setValueByPath(next, "evaluation.enable", evaluationEnabled);
+  }
+  const evaluationPath = getValueByPath(config, "evaluation.dataset_path");
+  if (evaluationEnabled === true && typeof evaluationPath === "string" && evaluationPath.trim().length > 0) {
+    setValueByPath(next, "evaluation.dataset_path", evaluationPath);
+  }
+
+  return next;
+}
+
+export function missingLlmResourceMessages(
+  schema: Record<string, unknown> | null,
+  config: Record<string, unknown>,
+): string[] {
+  const messages: string[] = [];
+  for (const field of collectAgentSchemaFields(schema, { featuredOnly: false })) {
+    if (!REQUIRED_LLM_RESOURCE_FIELDS.has(field.path)) continue;
+    if (!agentFieldVisibleForConfig(field, config)) continue;
+    if (field.options.length === 0) {
+      messages.push(fieldEmptyMessage(field) ?? (field.path === "llm.base_model" ? "No local models found" : "No training datasets found"));
+      continue;
+    }
+    const value = getValueByPath(config, field.path);
+    if (typeof value !== "string" || value.trim().length === 0) {
+      messages.push(`${field.label} is required`);
+    }
+  }
+  return Array.from(new Set(messages));
 }
 
 export function removeValueByPath(obj: Record<string, unknown>, path: string): Record<string, unknown> {

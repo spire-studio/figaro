@@ -59,7 +59,7 @@ export type LineSeries = {
   key: string;
   label: string;
   color: string;
-  values: number[];
+  values: Array<number | null | undefined>;
 };
 
 export type MiniLineChartProps = {
@@ -67,6 +67,7 @@ export type MiniLineChartProps = {
   xValues: number[];
   series: LineSeries[];
   formatter?: (value: number) => string;
+  emptyMessage?: string;
 };
 
 export type SimulationPageProps = {

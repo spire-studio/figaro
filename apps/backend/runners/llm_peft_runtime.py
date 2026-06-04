@@ -38,6 +38,9 @@ class LlmPeftRuntimeNotImplemented(RuntimeError):
     """Raised when the planned LLM PEFT route is selected before implementation."""
 
 
+SFT_DATA_FORMATS = ("prompt_completion", "messages", "alpaca")
+
+
 def run_llm_peft_runtime(config_path: Path) -> bool:
     """
     Bootstrap the Phase 2 LLM PEFT federated fine-tuning route.
@@ -87,23 +90,31 @@ def run_llm_peft_runtime(config_path: Path) -> bool:
             evaluation_path = _resolve_runtime_path(runtime_config.evaluation.dataset_path)
             evaluation_file_format = _effective_sft_file_format(
                 evaluation_path,
-                configured_file_format=runtime_config.sft.file_format,
+                configured_file_format="auto",
             )
-            evaluation_records = load_sft_records(
+            evaluation_records, evaluation_data_format = _load_sft_records_with_format_fallback(
                 evaluation_path,
-                data_format=runtime_config.sft.format,
-                file_format=runtime_config.sft.file_format,
-            )[: runtime_config.evaluation.max_samples]
+                preferred_format=runtime_config.sft.format,
+                file_format="auto",
+            )
+            evaluation_records = evaluation_records[: runtime_config.evaluation.max_samples]
             metrics["llm_evaluation"] = {
                 "enabled": True,
                 "path": str(evaluation_path),
                 "file_format": evaluation_file_format,
+                "format": evaluation_data_format,
                 "num_records": len(evaluation_records),
                 "batch_size": runtime_config.evaluation.batch_size,
                 "max_samples": runtime_config.evaluation.max_samples,
             }
+            print(
+                "LLM_EVALUATION_ENABLED: "
+                f"path={evaluation_path} records={len(evaluation_records)} "
+                f"format={evaluation_data_format} batch_size={runtime_config.evaluation.batch_size}"
+            )
         else:
             metrics["llm_evaluation"] = {"enabled": False}
+            print("LLM_EVALUATION_DISABLED")
         _write_metrics(runtime_config, metrics)
 
         missing = missing_llm_runtime_dependencies()
@@ -168,7 +179,7 @@ def run_llm_peft_runtime(config_path: Path) -> bool:
                     output_dir=work_dir / f"round_{round_num}" / f"client_{client_id}",
                 )
                 updates.append(update)
-                _append_client_metrics(metrics, client_id=client_id, update=update)
+                _append_client_metrics(metrics, client_id=client_id, round_num=round_num, update=update)
                 print(
                     "LLM_PEFT_CLIENT_DONE: "
                     f"round={round_num} client={client_id} "
@@ -223,6 +234,11 @@ def run_llm_peft_runtime(config_path: Path) -> bool:
                     "last_num_examples": int(evaluation_metrics.get("num_examples", len(evaluation_records))),
                     "last_num_tokens": int(evaluation_metrics.get("num_tokens", 0)),
                 }
+                print(
+                    "LLM_PEFT_EVAL_DONE: "
+                    f"round={round_num} validation_loss={validation_loss:.6f} "
+                    f"records={int(evaluation_metrics.get('num_examples', len(evaluation_records)))}"
+                )
             append_llm_round_metrics(
                 metrics,
                 round_num=round_num,
@@ -289,6 +305,26 @@ def _adapter_dir(config: LlmPeftRuntimeConfig) -> Path:
     return path
 
 
+def _load_sft_records_with_format_fallback(
+    path: Path,
+    *,
+    preferred_format: str,
+    file_format: str,
+) -> tuple[list[Any], str]:
+    tried_formats: list[str] = []
+    last_error: ValueError | None = None
+    for data_format in (preferred_format, *SFT_DATA_FORMATS):
+        if data_format in tried_formats:
+            continue
+        tried_formats.append(data_format)
+        try:
+            return load_sft_records(path, data_format=data_format, file_format=file_format), data_format
+        except ValueError as exc:
+            last_error = exc
+    formats = ", ".join(tried_formats)
+    raise ValueError(f"Unable to load SFT records from {path} using formats: {formats}") from last_error
+
+
 def _resolve_runtime_path(path: Path) -> Path:
     return path if path.is_absolute() else PROJECT_ROOT / path
 
@@ -341,14 +377,15 @@ def _select_clients(client_ids: list[int], *, clients_per_round: int, rng: rando
     return sorted(rng.sample(client_ids, selected_count))
 
 
-def _append_client_metrics(metrics: dict[str, Any], *, client_id: int, update) -> None:
+def _append_client_metrics(metrics: dict[str, Any], *, client_id: int, round_num: int, update) -> None:
     client_key = f"client_{client_id}"
     clients = metrics.setdefault("client_results", {})
     series = clients.setdefault(
         client_key,
-        {"train_loss": [], "train_acc": [], "test_loss": [], "test_acc": []},
+        {"rounds": [], "train_loss": [], "train_acc": [], "test_loss": [], "test_acc": []},
     )
     train_loss = float(update.metrics.get("train_loss", 0.0))
+    series.setdefault("rounds", []).append(int(round_num))
     series["train_loss"].append(train_loss)
     series["train_acc"].append(0.0)
     series["test_loss"].append(0.0)

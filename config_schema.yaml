@@ -106,13 +106,14 @@ llm:
     group: "LLM PEFT"
   base_model:
     type: "text"
-    options: ["Qwen/Qwen2.5-0.5B-Instruct"]
-    default: "Qwen/Qwen2.5-0.5B-Instruct"
+    options: []
+    default: ""
     ui:
       label: "Base model"
       featured: true
       group: "LLM PEFT"
       prompt_hint: "Hugging Face model id or a local model directory under ./models/llm."
+      empty_message: "No local models found"
   tokenizer:
     type: "text"
     default: "auto"
@@ -150,13 +151,14 @@ sft:
     group: "LLM PEFT"
   dataset_path:
     type: "text"
-    options: ["./datasets/llm/train.jsonl"]
-    default: "./datasets/llm/train.jsonl"
+    options: []
+    default: ""
     ui:
       label: "Dataset path"
       featured: true
       group: "LLM PEFT"
-      prompt_hint: "JSONL, Parquet file, or dataset directory under ./datasets/llm."
+      prompt_hint: "Training JSONL file, standalone Parquet file, or dataset directory under ./datasets/llm."
+      empty_message: "No training datasets found"
   file_format:
     type: "select"
     options: ["auto", "jsonl", "parquet"]
@@ -308,14 +310,15 @@ evaluation:
       prompt_hint: "Run validation loss/perplexity after each global adapter aggregation round."
   dataset_path:
     type: "text"
-    options: ["./datasets/llm/validation.jsonl"]
-    default: "./datasets/llm/validation.jsonl"
+    options: []
+    default: ""
     depends_on: "evaluation.enable == true"
     ui:
       label: "Validation dataset"
       featured: true
       group: "LLM PEFT"
-      prompt_hint: "Validation JSONL, Parquet file, or dataset directory under ./datasets/llm."
+      prompt_hint: "Validation JSONL file, standalone Parquet file, or dataset directory under ./datasets/llm."
+      empty_message: "No evaluation datasets found"
   max_samples:
     type: "number"
     min: 1

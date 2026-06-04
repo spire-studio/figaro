@@ -6,7 +6,7 @@ import { Button } from "../../../components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../components/ui/select";
 import { Separator } from "../../../components/ui/separator";
 import { MiniLineChart } from "../../simulation/components/MiniLineChart";
-import { getValueByPath, isRecord } from "../../simulation/utils";
+import { getValueByPath, isRecord, toClientSeries } from "../../simulation/utils";
 import {
   formatBytes,
   isLlmRunMetrics,
@@ -325,7 +325,6 @@ export function AgentResultsCompare(props: AgentPageProps) {
 
   const isLlmRun = isLlmRunMetrics(metrics);
   const globalResults = metrics?.global_results || {};
-  const clientResults = metrics?.client_results || {};
   const actualDataLength = isLlmRun
     ? (metrics?.llm_results?.rounds?.length || metrics?.llm_results?.train_loss?.length || 0)
     : (globalResults.global_accuracy?.length || 0);
@@ -336,11 +335,10 @@ export function AgentResultsCompare(props: AgentPageProps) {
 
   const globalAccSeries = [{ key: "g_acc", label: "Global Accuracy", color: CHART_COLORS[0], values: safeSlice(globalResults.global_accuracy) }];
   const globalLossSeries = [{ key: "g_loss", label: "Global Loss", color: CHART_COLORS[3], values: safeSlice(globalResults.global_loss) }];
-  const clientIds = Object.keys(clientResults);
-  const clientTrainAccSeries = clientIds.map((cId, idx) => ({ key: `${cId}_train_acc`, label: cId, color: CHART_COLORS[(idx + 1) % CHART_COLORS.length], values: safeSlice(clientResults[cId].train_acc) }));
-  const clientTrainLossSeries = clientIds.map((cId, idx) => ({ key: `${cId}_train_loss`, label: cId, color: CHART_COLORS[(idx + 1) % CHART_COLORS.length], values: safeSlice(clientResults[cId].train_loss) }));
-  const clientTestAccSeries = clientIds.map((cId, idx) => ({ key: `${cId}_test_acc`, label: cId, color: CHART_COLORS[(idx + 1) % CHART_COLORS.length], values: safeSlice(clientResults[cId].test_acc) }));
-  const clientTestLossSeries = clientIds.map((cId, idx) => ({ key: `${cId}_test_loss`, label: cId, color: CHART_COLORS[(idx + 1) % CHART_COLORS.length], values: safeSlice(clientResults[cId].test_loss) }));
+  const clientTrainAccSeries = toClientSeries(metrics, "train_acc", rounds);
+  const clientTrainLossSeries = toClientSeries(metrics, "train_loss", rounds);
+  const clientTestAccSeries = toClientSeries(metrics, "test_acc", rounds);
+  const clientTestLossSeries = toClientSeries(metrics, "test_loss", rounds);
 
   return (
     <div className="grid h-full gap-4 xl:grid-cols-[360px_1fr]">
@@ -674,7 +672,7 @@ export function AgentResultsCompare(props: AgentPageProps) {
                   <div className="space-y-4 mt-2">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <Card className="shadow-sm"><CardContent className="p-4"><MiniLineChart title="LLM Train Loss" xValues={rounds} series={llmTrainLossSeries(metrics)} formatter={(v: number) => v.toFixed(4)} /></CardContent></Card>
-                      <Card className="shadow-sm"><CardContent className="p-4"><MiniLineChart title="LLM Validation Loss" xValues={rounds} series={llmValidationLossSeries(metrics)} formatter={(v: number) => v.toFixed(4)} /></CardContent></Card>
+                      <Card className="shadow-sm"><CardContent className="p-4"><MiniLineChart title="LLM Validation Loss" xValues={rounds} series={llmValidationLossSeries(metrics)} formatter={(v: number) => v.toFixed(4)} emptyMessage="No validation data available." /></CardContent></Card>
                       <Card className="shadow-sm"><CardContent className="p-4"><MiniLineChart title="Perplexity" xValues={rounds} series={llmPerplexitySeries(metrics)} formatter={(v: number) => v.toFixed(2)} /></CardContent></Card>
                       <Card className="shadow-sm"><CardContent className="p-4"><MiniLineChart title="Token Throughput" xValues={rounds} series={llmThroughputSeries(metrics)} formatter={(v: number) => `${v.toFixed(1)} tok/s`} /></CardContent></Card>
                       <Card className="shadow-sm"><CardContent className="p-4"><MiniLineChart title="Adapter Size" xValues={rounds} series={llmAdapterSizeSeries(metrics)} formatter={(v: number) => formatBytes(v)} /></CardContent></Card>

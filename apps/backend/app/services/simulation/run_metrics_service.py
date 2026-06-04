@@ -299,6 +299,7 @@ class SimulationRunMetricsService:
                 if not isinstance(client_name, str) or not isinstance(client_data, dict):
                     continue
                 normalized_clients[client_name] = {
+                    "rounds": self._to_int_list(client_data.get("rounds")),
                     "train_loss": self._to_float_list(client_data.get("train_loss")),
                     "train_acc": self._to_float_list(client_data.get("train_acc")),
                     "test_loss": self._to_float_list(client_data.get("test_loss")),

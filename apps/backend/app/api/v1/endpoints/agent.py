@@ -37,6 +37,7 @@ from app.services.agent.planning import (
     deep_merge_config,
     dumps_for_prompt,
     lock_structured_constraints,
+    merge_llm_resource_constraints,
 )
 from app.services.llm import LLMRegistry, LLMService
 from app.schemas.agent import AgentPlanPreviewRequest, AgentPlanPreviewResponse, ExperimentPlanPreview, AgentPlanReviseRequest
@@ -791,6 +792,7 @@ async def revise_plan_preview(
     constrained_base = experiment_service.normalize_simulation_config(
         deep_merge_config(build_initial_config(schema), config_constraints)
     )
+    effective_constraints = merge_llm_resource_constraints(constrained_base, config_constraints)
     normalized_experiments = []
     for idx, exp in enumerate(updated_experiments):
         if not isinstance(exp, dict):
@@ -800,7 +802,7 @@ async def revise_plan_preview(
             raw_config = {}
         merged = lock_structured_constraints(
             deep_merge_config(constrained_base, raw_config),
-            config_constraints,
+            effective_constraints,
         )
         normalized_experiments.append(
             {

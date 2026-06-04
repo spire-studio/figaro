@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import math
 import sys
 import tempfile
 from contextlib import contextmanager
@@ -133,6 +134,21 @@ class LlmPeftTrainer:
 
         dataset = self._tokenized_dataset(records, tokenizer)
         data_collator = CausalLmSftDataCollator(tokenizer)
+        estimated_steps = _estimated_train_steps(
+            num_records=len(dataset),
+            batch_size=self.config.sft.per_device_train_batch_size,
+            gradient_accumulation_steps=self.config.sft.gradient_accumulation_steps,
+            local_epochs=self.config.federated.local_epochs,
+        )
+        progress_logging_steps = _progress_logging_steps(estimated_steps)
+        print(
+            "LLM_PEFT_CLIENT_TRAINING: "
+            f"round={round_num} client={client_id} local_epochs={self.config.federated.local_epochs} "
+            f"batch_size={self.config.sft.per_device_train_batch_size} "
+            f"gradient_accumulation_steps={self.config.sft.gradient_accumulation_steps} "
+            f"estimated_steps={estimated_steps} progress_every_steps={progress_logging_steps}",
+            flush=True,
+        )
 
         train_output_dir = Path(output_dir) if output_dir is not None else Path(tempfile.mkdtemp(prefix="figaro-llm-client-"))
         train_output_dir.mkdir(parents=True, exist_ok=True)
@@ -142,7 +158,8 @@ class LlmPeftTrainer:
             gradient_accumulation_steps=self.config.sft.gradient_accumulation_steps,
             num_train_epochs=self.config.federated.local_epochs,
             learning_rate=self.config.federated.learning_rate,
-            logging_strategy="no",
+            logging_strategy="steps",
+            logging_steps=progress_logging_steps,
             save_strategy="no",
             disable_tqdm=True,
             report_to=[],
@@ -155,7 +172,15 @@ class LlmPeftTrainer:
             args=training_args,
             train_dataset=dataset,
             data_collator=data_collator,
+            callbacks=[
+                _LlmPeftProgressCallback(
+                    round_num=round_num,
+                    client_id=client_id,
+                    total_steps=estimated_steps,
+                )
+            ],
         )
+        _remove_default_transformers_printers(trainer, transformers)
         train_output = trainer.train()
         adapter_state = {
             key: value.detach().cpu()
@@ -342,6 +367,79 @@ def _quiet_transformers(transformers: Any) -> None:
     set_verbosity_error = getattr(logging_module, "set_verbosity_error", None)
     if callable(set_verbosity_error):
         set_verbosity_error()
+
+
+class _LlmPeftProgressCallback:
+    def __init__(self, *, round_num: int, client_id: int, total_steps: int) -> None:
+        self.round_num = round_num
+        self.client_id = client_id
+        self.total_steps = total_steps
+
+    def __getattr__(self, name: str) -> Any:
+        if name.startswith("on_"):
+            return _noop_trainer_callback
+        raise AttributeError(name)
+
+    def on_log(self, args: Any, state: Any, control: Any, logs: dict[str, Any] | None = None, **kwargs: Any) -> None:
+        if not logs:
+            return
+        step = int(getattr(state, "global_step", 0) or 0)
+        max_steps = int(getattr(state, "max_steps", 0) or self.total_steps or 0)
+        parts = [
+            "LLM_PEFT_TRAIN_PROGRESS:",
+            f"round={self.round_num}",
+            f"client={self.client_id}",
+            f"step={step}/{max_steps}" if max_steps else f"step={step}",
+        ]
+
+        epoch = _optional_float(logs.get("epoch"))
+        if epoch is not None:
+            parts.append(f"local_epoch={epoch:.3f}")
+        loss = _optional_float(logs.get("loss"))
+        if loss is not None:
+            parts.append(f"loss={loss:.6f}")
+        learning_rate = _optional_float(logs.get("learning_rate"))
+        if learning_rate is not None:
+            parts.append(f"learning_rate={learning_rate:.6g}")
+        print(" ".join(parts), flush=True)
+
+
+def _noop_trainer_callback(*args: Any, **kwargs: Any) -> None:
+    return None
+
+
+def _remove_default_transformers_printers(trainer: Any, transformers: Any) -> None:
+    for callback_name in ("PrinterCallback", "ProgressCallback"):
+        callback_cls = getattr(transformers, callback_name, None)
+        if callback_cls is None:
+            continue
+        try:
+            trainer.remove_callback(callback_cls)
+        except (AttributeError, ValueError):
+            continue
+
+
+def _estimated_train_steps(
+    *,
+    num_records: int,
+    batch_size: int,
+    gradient_accumulation_steps: int,
+    local_epochs: int,
+) -> int:
+    effective_batch_size = max(1, int(batch_size)) * max(1, int(gradient_accumulation_steps))
+    steps_per_epoch = math.ceil(max(1, int(num_records)) / effective_batch_size)
+    return max(1, steps_per_epoch * max(1, int(local_epochs)))
+
+
+def _progress_logging_steps(total_steps: int) -> int:
+    return max(10, min(500, max(1, int(total_steps)) // 20 or 1))
+
+
+def _optional_float(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _tokenize_text(
